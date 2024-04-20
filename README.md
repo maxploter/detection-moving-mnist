@@ -21,7 +21,7 @@ Video conversion uses a rate of 10 frames per second. This can be adjusted in `s
 
 ## Dataset Versions
 
-This dataset currently supports 3 versions: easy, medium, and random.
+This dataset currently supports 4 versions: easy, medium, hard, and random.
 
 Suggestions:
 
