@@ -133,14 +133,3 @@ def get_padding(target_width, target_height, input_width, input_height):
     top_pad = padding_height // 2
     bottom_pad = padding_height - top_pad
     return left_pad, top_pad, right_pad, bottom_pad
-
-
-def apply_n_times(tf, x, n):
-    """Apply `tf` to `x` `n` times, return all values"""
-    sequence = [x]
-    captions = []
-    for _ in range(n):
-        x_new, caption = tf(sequence[-1])
-        sequence.append(x_new)
-        captions.append(caption)
-    return sequence, captions

@@ -6,6 +6,7 @@ from src.mmnist.trajectory import (
     BouncingTrajectory,
     RandomTrajectory,
     SimpleLinearTrajectory,
+    OutOfBoundsTrajectory,
 )
 
 CONFIGS = {
@@ -41,7 +42,7 @@ CONFIGS = {
 TRAJECTORIES = {
     "easy": SimpleLinearTrajectory,
     "medium": BouncingTrajectory,
-    "hard": None,
+    "hard": OutOfBoundsTrajectory,
     "random": RandomTrajectory,
 }
 
