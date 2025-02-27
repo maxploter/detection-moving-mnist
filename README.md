@@ -28,14 +28,6 @@ Suggestions:
 - Use a small `[num_frames_per_video]`, such as 20, for the easy version because the digit will quickly move out of
   bounds.
 
-## Rye Commands
-
-- Sync: `rye sync`
-- Add dependency: `rye add numpy`
-- Remove dependency: `rye remove numpy`
-- Activate the virtualenv: `. .venv/bin/activate`
-- Deactivate: `deactivate`
-
 ## Acknowledgements
 
 This project is based on and modified from the repository:
