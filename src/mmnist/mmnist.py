@@ -32,7 +32,7 @@ class MovingMNIST:
         self.affine_params = affine_params
         self.num_digits = num_digits
         self.num_frames = num_frames
-        self.padding = get_padding(128, 72, 28, 28)  # MNIST images are 28x28
+        self.padding = get_padding(128, 128, 28, 28)  # MNIST images are 28x28
         self.concat = concat
 
     def random_place(self, img):

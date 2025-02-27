@@ -3,7 +3,7 @@
 This dataset extends the [original Moving MNIST dataset](https://www.cs.toronto.edu/~nitish/unsupervised_video/). A few
 variations on how digits move are added.
 
-In this dataset, each frame is padded to have a resolution of image size parameter. Each frame is also provided with annotations for object detection (center point detection).
+In this dataset, each frame is padded to have a resolution of image size 128x128. Each frame is also provided with annotations for object detection (center point detection).
 
 ## How to generate torch-tensor-format datasets
 
@@ -66,4 +66,4 @@ This project is based on and modified from the repository:
 
 * [captioned-moving-mnist](https://github.com/YichengShen/captioned-moving-mnist/tree/main)
 
-We extend our gratitude to the original authors for their work.
+We extend our gratitude to the original author @YichengShen for their work.
