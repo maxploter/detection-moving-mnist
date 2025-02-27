@@ -1,9 +1,9 @@
-# Captioned Moving MNIST Dataset
+# Detection Moving MNIST Dataset
 
 This dataset extends the [original Moving MNIST dataset](https://www.cs.toronto.edu/~nitish/unsupervised_video/). A few
 variations on how digits move are added.
 
-In this dataset, each frame is padded to have a resolution of 128x72. Each frame is also provided with a text caption.
+In this dataset, each frame is padded to have a resolution of image size parameter. Each frame is also provided with annotations for object detection (center point detection).
 
 ## How to generate torch-tensor-format datasets
 
@@ -35,3 +35,11 @@ Suggestions:
 - Remove dependency: `rye remove numpy`
 - Activate the virtualenv: `. .venv/bin/activate`
 - Deactivate: `deactivate`
+
+## Acknowledgements
+
+This project is based on and modified from the repository:
+
+* [captioned-moving-mnist](https://github.com/YichengShen/captioned-moving-mnist/tree/main)
+
+We extend our gratitude to the original authors for their work.
