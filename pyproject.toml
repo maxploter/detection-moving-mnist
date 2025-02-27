@@ -1,0 +1,35 @@
+[project]
+name = "captioned-moving-mnist"
+version = "0.1.0"
+description = "This project extends the original Moving MNIST dataset with more variations in data and provides captions."
+authors = [
+    { name = "Yicheng", email = "" }
+]
+dependencies = [
+    "hydra-core>=1.3.2",
+    "torch>=2.1.2",
+    "torchvision>=0.16.2",
+    "numpy>=1.26.2",
+    "matplotlib>=3.8.2",
+    "opencv-python>=4.9.0.80",
+    "black>=24.4.0",
+    "tqdm>=4.66.2",
+]
+readme = "README.md"
+requires-python = ">= 3.11.6"
+
+[project.scripts]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = []
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ml_template"]
