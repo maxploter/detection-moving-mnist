@@ -3,26 +3,24 @@
 This dataset extends the [original Moving MNIST dataset](https://www.cs.toronto.edu/~nitish/unsupervised_video/). A few
 variations on how digits move are added.
 
-In this dataset, each frame is padded to have a resolution of image size parameter. Each frame is also provided with annotations for object detection (center point detection).
+In this dataset, each frame is padded to have a resolution of image size 128x128. Each frame is also provided with annotations for object detection (center point detection).
 
 ## How to generate torch-tensor-format datasets
 
 ```text
-python3 generate.py -h
-usage: generate.py [-h] [--version VERSION] [--split SPLIT] [--num_frames_per_video NUM_FRAMES_PER_VIDEO] [--num_batches NUM_BATCHES] [--batch_size BATCH_SIZE]
+python3 generate.py -h                                                                  
+usage: generate.py [-h] [--version VERSION] [--split SPLIT] [--num_frames_per_video NUM_FRAMES_PER_VIDEO] [--num_videos NUM_VIDEOS]
 
 Generate Detection MovingMNIST dataset with specified parameters.
 
 options:
   -h, --help            show this help message and exit
-  --version VERSION     MMNIST version: easy, medium, hard, random
+  --version VERSION     MMNIST version: easy
   --split SPLIT         Dataset splits: train, test
   --num_frames_per_video NUM_FRAMES_PER_VIDEO
                         Number of frames per video.
-  --num_batches NUM_BATCHES
-                        Number of batches to generate.
-  --batch_size BATCH_SIZE
-                        Batch size.
+  --num_videos NUM_VIDEOS
+                        Number of videos.
 ```
 
 Example:
@@ -66,4 +64,4 @@ This project is based on and modified from the repository:
 
 * [captioned-moving-mnist](https://github.com/YichengShen/captioned-moving-mnist/tree/main)
 
-We extend our gratitude to the original authors for their work.
+We extend our gratitude to the original author @YichengShen for their work.

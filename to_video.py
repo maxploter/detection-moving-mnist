@@ -1,6 +1,7 @@
 import logging
 import os
 import argparse
+import shutil
 
 import cv2
 from tqdm import tqdm
@@ -37,28 +38,24 @@ def main(args):
 
     output_path_folder = f"mmnist-dataset/video-format/mmnist-{version}/{args.split}"
 
-    frame_batches, caption_batches = load_dataset(
-        f"mmnist-dataset/torch-tensor-format/mmnist-{version}/{args.split}"
+    source_path_folder = f"mmnist-dataset/torch-tensor-format/mmnist-{version}/{args.split}"
+    video_frames, video_file_names = load_dataset(source_path_folder)
+
+    for i, (video_frames, video_file_name) in enumerate(tqdm(zip(video_frames, video_file_names), desc="Processing videos")):
+        create_video_from_frames(
+            video_frames,
+            output_filename=os.path.join(
+                output_path_folder, video_file_name.replace('.pt', '.mp4')
+            ),
+            frame_rate=10.0,
+            resolution=(128, 128),
+            colormap=cv2.COLORMAP_BONE,
+        )
+
+    shutil.copy2(
+        os.path.join(source_path_folder, 'targets.json'),
+        os.path.join(output_path_folder, 'targets.json'),
     )
-
-    for i, batch in enumerate(tqdm(frame_batches, desc="Processing batches")):
-        for j, frames in enumerate(batch):
-            create_video_from_frames(
-                frames,
-                output_filename=os.path.join(
-                    output_path_folder, f"batch_{i}_video_{j}.mp4"
-                ),
-                frame_rate=10.0,
-                resolution=(128, 72),
-                colormap=cv2.COLORMAP_BONE,
-            )
-
-            with open(
-                os.path.join(output_path_folder, f"batch_{i}_video_{j}_captions.txt"),
-                "w",
-            ) as file:
-                for line in caption_batches[i][j]:
-                    file.write(line + "\n")
 
     logging.info(f"Video-format data saved in directory: {output_path_folder}")
 
