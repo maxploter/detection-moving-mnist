@@ -1,27 +1,44 @@
 import logging
 import os
-import sys
+import argparse
 
 import cv2
 from tqdm import tqdm
 
+from generate import CONFIGS, DATASET_SPLITS
 from src.utils.utils import load_dataset, create_video_from_frames
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Convert torch-tensor-format to video-format."
+    )
+    parser.add_argument(
+        "--version",
+        type=str,
+        help=f"MMNIST version: {', '.join(CONFIGS.keys())}",
+    )
+    parser.add_argument(
+        "--split",
+        type=str,
+        help=f"Dataset splits: {', '.join(DATASET_SPLITS)}",
+    )
 
-def main():
-    if len(sys.argv) != 2:
-        print("Usage: python3 to_video.py [version]")
-        sys.exit(1)
-    version = sys.argv[1]
+    args = parser.parse_args()
 
-    output_path_folder = f"mmnist-dataset/video-format/mmnist-{version}"
+    return args
+
+
+def main(args):
+    version = args.version
+
+    output_path_folder = f"mmnist-dataset/video-format/mmnist-{version}/{args.split}"
 
     frame_batches, caption_batches = load_dataset(
-        f"mmnist-dataset/torch-tensor-format/mmnist-{version}"
+        f"mmnist-dataset/torch-tensor-format/mmnist-{version}/{args.split}"
     )
 
     for i, batch in enumerate(tqdm(frame_batches, desc="Processing batches")):
@@ -47,4 +64,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args)

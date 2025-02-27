@@ -1,5 +1,4 @@
 import argparse
-import sys
 from types import SimpleNamespace
 
 from src.mmnist.mmnist import MovingMNIST
@@ -56,30 +55,27 @@ def parse_args():
         description="Generate Detection MovingMNIST dataset with specified parameters."
     )
     parser.add_argument(
-        "version",
-        choices=CONFIGS.keys(),
+        "--version",
+        type=str,
         help=f"MMNIST version: {', '.join(CONFIGS.keys())}",
     )
     parser.add_argument(
-        "split",
-        choices=DATASET_SPLITS,
+        "--split",
+        type=str,
         help=f"Dataset splits: {', '.join(DATASET_SPLITS)}",
     )
     parser.add_argument(
-        "num_frames_per_video", type=int, help="Number of frames per video."
+        "--num_frames_per_video", type=int, help="Number of frames per video."
     )
-    parser.add_argument("num_batches", type=int, help="Number of batches to generate.")
-    parser.add_argument("batch_size", type=int, help="Batch size.")
+    parser.add_argument("--num_batches", type=int, help="Number of batches to generate.")
+    parser.add_argument("--batch_size", type=int, help="Batch size.")
 
     args = parser.parse_args()
 
     return args
 
 
-def main():
-
-    args = parse_args()
-
+def main(args):
     version = args.version
     num_frames_per_video = args.num_frames_per_video
     num_batches = args.num_batches
@@ -96,16 +92,18 @@ def main():
 
     dataset = MovingMNIST(
         trajectory=trajectory,
+        train=True if args.split == TRAIN_SPLIT else False,
         affine_params=affine_params,
         num_digits=CONFIGS[version]["num_digits"],
         num_frames=num_frames_per_video,
     )
     dataset.save(
-        directory=f"mmnist-dataset/torch-tensor-format/mmnist-{version}",
+        directory=f"mmnist-dataset/torch-tensor-format/mmnist-{version}/{args.split}/",
         n_batches=num_batches,
         bs=batch_size,
     )
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args)
