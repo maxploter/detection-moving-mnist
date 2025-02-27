@@ -27,32 +27,21 @@ class BaseTrajectory:
         self.scale = random.uniform(*self.affine_params.scale)
         self.shear = random.uniform(*self.affine_params.shear)
 
-    def transform(self, img):
+    def transform(self, img, position):
         raise NotImplementedError("This method should be implemented by subclasses.")
 
     def __call__(self, img):
         sequence = [img]
-        transformations = []
+        center_points = [self.position]
         for _ in range(self.n):
-            img, caption = self.transform(sequence[-1])
+            img, position = self.transform(sequence[-1], center_points[-1])
             sequence.append(img)
-            transformations.append(caption)
-        return sequence, transformations
-
-    def describe_movement(self, translate, scale):
-        horizontal_direction = "right" if translate[0] > 0 else "left"
-        vertical_direction = "upwards" if translate[1] < 0 else "downwards"
-        if scale > 1:
-            size_change = "enlarges in size"
-        elif scale < 1:
-            size_change = "reduces in size"
-        else:
-            size_change = "remains the same size"
-        return horizontal_direction, vertical_direction, size_change
+            center_points.append(position)
+        return sequence, center_points
 
 
 class SimpleLinearTrajectory(BaseTrajectory):
-    def transform(self, img):
+    def transform(self, img, position):
         img = TF.affine(
             img,
             angle=self.angle,
@@ -62,15 +51,12 @@ class SimpleLinearTrajectory(BaseTrajectory):
             **self.kwargs,
         )
 
-        horizontal_direction, vertical_direction, size_change = self.describe_movement(
-            self.translate, self.scale
-        )
-        transformation_caption = (
-            f"The digit {self.digit_label} consistently moves {horizontal_direction} by {abs(self.translate[0]):.1f} pixels and "
-            f"{vertical_direction} by {abs(self.translate[1]):.1f} pixels, rotates by {self.angle:.1f} degrees, and {size_change}."
+        new_position = (
+            position[0] + self.translate[0],
+            position[1] + self.translate[1],
         )
 
-        return img, transformation_caption
+        return img, new_position
 
 
 class BouncingTrajectory(BaseTrajectory):

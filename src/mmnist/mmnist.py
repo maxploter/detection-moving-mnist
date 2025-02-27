@@ -1,4 +1,6 @@
+import json
 import logging
+import math
 import os
 import random
 
@@ -32,6 +34,8 @@ class MovingMNIST:
         self.affine_params = affine_params
         self.num_digits = num_digits
         self.num_frames = num_frames
+        self.target_width = 128
+        self.target_height = 128
         self.padding = get_padding(128, 128, 28, 28)  # MNIST images are 28x28
         self.concat = concat
 
@@ -59,32 +63,47 @@ class MovingMNIST:
             padding=self.padding,
             initial_position=initial_position,
         )
-        frames, captions = traj(digit)
-        return torch.stack(frames), captions, label
+        frames, positions = traj(digit)
+        return torch.stack(frames), positions, label
 
     def __getitem__(self, i):
-        moving_digits, captions_list, labels = zip(
+        moving_digits, positions, all_labels = zip(
             *(self._one_moving_digit() for _ in range(random.choice(self.num_digits)))
         )
         moving_digits = torch.stack(moving_digits)
         combined_digits = moving_digits.max(dim=0)[0]
 
-        if len(labels) == 1:
-            combined_captions = [f"A digit {labels[0]} is on the first frame."]
-        else:
-            combined_captions = [f"Digits {labels} are on the first frame."]
-        for frame_idx in range(len(captions_list[0])):
-            frame_caption = "\t".join(
-                [captions[frame_idx] for captions in captions_list]
-            )
-            combined_captions.append(frame_caption)
+        top_boundary = math.ceil(self.target_height / 2) - 1
+        bottom_boundary = -self.target_height // 2
+
+        right_boundary = math.ceil(self.target_width / 2) - 1
+        left_boundary = -self.target_width // 2
+
+        targets = []
+        for frame_number in range(self.num_frames):
+            target = {}
+
+            labels = []
+            center_points = []
+
+            for digit_center_points, label in zip(positions, all_labels):
+                cx, cy = digit_center_points[frame_number]
+
+                if top_boundary >= cx >= bottom_boundary and right_boundary >= cy >= left_boundary:
+                    labels.append(label)
+                    center_points.append((cx,cy))
+
+            target['labels'] = labels
+            target['center_points'] = center_points
+            targets.append(target)
+
         return (
             (
                 combined_digits
                 if self.concat
                 else [t.squeeze(dim=0) for t in combined_digits.split(1)]
             ),
-            combined_captions,
+            targets,
         )
 
     def get_batch(self, bs=32):
@@ -93,23 +112,21 @@ class MovingMNIST:
         frames = torch.stack(frames)
         return frames, captions
 
-    def save(self, directory, n_batches, bs):
+
+    def save(self, directory, num_videos):
         if not os.path.exists(directory):
             os.makedirs(directory)
 
-        for batch_index in tqdm(range(n_batches), desc="Processing batches"):
-            batch_frames, batch_captions = self.get_batch(bs)
-            torch.save(
-                batch_frames, os.path.join(directory, f"batch_{batch_index}_frames.pt")
-            )
+        all_targets = []
 
-            with open(
-                os.path.join(directory, f"batch_{batch_index}_captions.txt"), "w"
-            ) as file:
-                for captions in batch_captions:
-                    for single_frame_caption in captions:
-                        file.write(single_frame_caption + "\n")
-                    file.write("\n\n")
+        for seq_index in tqdm(range(num_videos), desc="Processing sequences"):
+            frames, targets = self[0]  # Get a single sequence
+            torch.save(frames, os.path.join(directory, f"video_{seq_index}_frames.pt"))
+            all_targets.append(targets)
+
+        # Save global targets JSON
+        with open(os.path.join(directory, "targets.json"), "w") as f:
+            json.dump(all_targets, f)
 
         logging.info(f"Tensor-format data saved in directory: {directory}")
 

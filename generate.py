@@ -57,7 +57,7 @@ def parse_args():
     parser.add_argument(
         "--version",
         type=str,
-        help=f"MMNIST version: {', '.join(CONFIGS.keys())}",
+        help=f"MMNIST version: easy",
     )
     parser.add_argument(
         "--split",
@@ -67,8 +67,7 @@ def parse_args():
     parser.add_argument(
         "--num_frames_per_video", type=int, help="Number of frames per video."
     )
-    parser.add_argument("--num_batches", type=int, help="Number of batches to generate.")
-    parser.add_argument("--batch_size", type=int, help="Batch size.")
+    parser.add_argument("--num_videos", type=int, help="Number of videos.")
 
     args = parser.parse_args()
 
@@ -78,8 +77,9 @@ def parse_args():
 def main(args):
     version = args.version
     num_frames_per_video = args.num_frames_per_video
-    num_batches = args.num_batches
-    batch_size = args.batch_size
+
+    if version != 'easy':
+        raise ValueError(f'Version {version} is not yet implemented.')
 
     if version not in CONFIGS:
         raise ValueError(f"Unsupported MMNIST version: {version}")
@@ -99,8 +99,7 @@ def main(args):
     )
     dataset.save(
         directory=f"mmnist-dataset/torch-tensor-format/mmnist-{version}/{args.split}/",
-        n_batches=num_batches,
-        bs=batch_size,
+        num_videos=args.num_videos
     )
 
 
