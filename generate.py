@@ -1,5 +1,9 @@
 import argparse
+import random
 from types import SimpleNamespace
+
+import numpy as np
+import torch
 
 from src.mmnist.mmnist import MovingMNIST
 from src.mmnist.trajectory import (
@@ -16,10 +20,10 @@ DATASET_SPLITS = [TRAIN_SPLIT, TEST_SPLIT]
 CONFIGS = {
     "easy": {
         "angle": (0, 0),  # No rotation
-        "translate": ((-1, 1), (-1, 1)),
+        "translate": ((-5, 5), (-5, 5)),
         "scale": (1, 1),  # No scaling
         "shear": (0, 0),  # No deformation on z-axis
-        "num_digits": (1,),
+        "num_digits": (1,2,3,4,5,6,7,8,9,10),
     },
     "medium": {
         "angle": (0, 0),
@@ -68,6 +72,7 @@ def parse_args():
         "--num_frames_per_video", type=int, help="Number of frames per video."
     )
     parser.add_argument("--num_videos", type=int, help="Number of videos.")
+    parser.add_argument("--seed", type=int, default=5561, help="Seed.")
 
     args = parser.parse_args()
 
@@ -77,6 +82,9 @@ def parse_args():
 def main(args):
     version = args.version
     num_frames_per_video = args.num_frames_per_video
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
 
     if version != 'easy':
         raise ValueError(f'Version {version} is not yet implemented.')

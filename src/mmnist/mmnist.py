@@ -34,28 +34,25 @@ class MovingMNIST:
         self.affine_params = affine_params
         self.num_digits = num_digits
         self.num_frames = num_frames
-        self.target_width = 128
-        self.target_height = 128
+        self.canvas_width = 128
+        self.canvas_height = 128
         self.padding = get_padding(128, 128, 28, 28)  # MNIST images are 28x28
         self.concat = concat
 
-    def random_place(self, img):
-        """Randomly place the digit inside the canvas"""
-        x = random.randint(-self.padding[0], self.padding[0])
-        y = random.randint(-self.padding[1], self.padding[1])
-        placed_img = TF.affine(img, translate=[x, y], angle=0, scale=1, shear=[0])
-        return placed_img, (x, y)
-
-    def random_digit(self):
+    def random_digit(self, initial_translation):
         """Get a random MNIST digit randomly placed on the canvas"""
-        img, label = self.mnist[random.randrange(0, self.total_data_num)]
+        mnist_idx = random.randrange(0, self.total_data_num)
+        img, label = self.mnist[mnist_idx]
         img = TF.to_tensor(img)
         pimg = TF.pad(img, padding=self.padding)
-        placed_img, initial_position = self.random_place(pimg)
-        return placed_img, initial_position, label
 
-    def _one_moving_digit(self):
-        digit, initial_position, label = self.random_digit()
+        x = initial_translation[0]
+        y = initial_translation[1]
+        placed_img = TF.affine(pimg, translate=[x, y], angle=0, scale=1, shear=[0])
+        return placed_img, (x,y), label, mnist_idx
+
+    def _one_moving_digit(self, initial_translation):
+        digit, initial_position, label, mnist_idx = self.random_digit(initial_translation)
         traj = self.trajectory(
             label,
             self.affine_params,
@@ -64,20 +61,23 @@ class MovingMNIST:
             initial_position=initial_position,
         )
         frames, positions = traj(digit)
-        return torch.stack(frames), positions, label
+        return torch.stack(frames), positions, label, mnist_idx
 
     def __getitem__(self, i):
-        moving_digits, positions, all_labels = zip(
-            *(self._one_moving_digit() for _ in range(random.choice(self.num_digits)))
+        digits = random.choice(self.num_digits)
+        initial_digit_translations_overlap_free = translate_digits_overlap_free(self.canvas_width, self.canvas_height, digits)
+
+        moving_digits, positions, all_labels, mnist_indices = zip(
+            *(self._one_moving_digit(initial_digit_translations_overlap_free[i]) for i in range(digits))
         )
         moving_digits = torch.stack(moving_digits)
         combined_digits = moving_digits.max(dim=0)[0]
 
-        top_boundary = math.ceil(self.target_height / 2) - 1
-        bottom_boundary = -self.target_height // 2
+        top_boundary = math.ceil(self.canvas_height / 2) - 1
+        bottom_boundary = -self.canvas_height // 2
 
-        right_boundary = math.ceil(self.target_width / 2) - 1
-        left_boundary = -self.target_width // 2
+        right_boundary = math.ceil(self.canvas_width / 2) - 1
+        left_boundary = -self.canvas_width // 2
 
         targets = []
         for frame_number in range(self.num_frames):
@@ -104,30 +104,26 @@ class MovingMNIST:
                 else [t.squeeze(dim=0) for t in combined_digits.split(1)]
             ),
             targets,
+            mnist_indices
         )
-
-    def get_batch(self, bs=32):
-        batch = [self[0] for _ in range(bs)]
-        frames, captions = zip(*batch)
-        frames = torch.stack(frames)
-        return frames, captions
-
 
     def save(self, directory, num_videos):
         if not os.path.exists(directory):
             os.makedirs(directory)
 
         all_targets = []
-
+        mnist_indices_used = set()
         for seq_index in tqdm(range(num_videos), desc="Processing sequences"):
-            frames, targets = self[0]  # Get a single sequence
+            frames, targets, mnist_indices = self[0]  # Get a single sequence
             torch.save(frames, os.path.join(directory, f"video_{seq_index}_frames.pt"))
             all_targets.append(targets)
+            mnist_indices_used.update(list(mnist_indices))
 
         # Save global targets JSON
         with open(os.path.join(directory, "targets.json"), "w") as f:
             json.dump(all_targets, f)
 
+        logging.info(f"Number of unused digits from dataset {len(self.mnist) - len(mnist_indices_used)}")
         logging.info(f"Tensor-format data saved in directory: {directory}")
 
 
@@ -151,3 +147,40 @@ def get_padding(target_width, target_height, input_width, input_height):
     top_pad = padding_height // 2
     bottom_pad = padding_height - top_pad
     return left_pad, top_pad, right_pad, bottom_pad
+
+
+def translate_digits_overlap_free(canvas_width, canvas_height, num_objects, digit_size=28):
+    placed_positions = []
+
+    for _ in range(num_objects):
+        max_attempts = 20  # Retry limit
+        min_overlap_area = 0
+        min_overlap_point = None
+        for _ in range(max_attempts):
+            # Randomly generate a position
+            x = random.randint(0, canvas_width - digit_size)
+            y = random.randint(0, canvas_height - digit_size)
+
+            overlap_area = 0
+
+            for px, py in placed_positions:
+                horizontal_overlap = max(0, min(x + digit_size, px + digit_size) - max(x, px))
+                vertical_overlap = max(0, min(y + digit_size, py + digit_size) - max(y, py))
+                overlap_area += horizontal_overlap * vertical_overlap
+
+            if overlap_area == 0:
+                placed_positions.append((x, y))
+                break
+            elif min_overlap_point is None or min_overlap_area > overlap_area:
+                min_overlap_point = (x, y)
+        else:
+            assert min_overlap_point is not None
+            placed_positions.append(min_overlap_point)
+
+    placed_position_translations = []
+    for p in placed_positions:
+        x, y = p
+        cx, cy = x+digit_size//2, y+digit_size//2
+        tx, ty = canvas_width//2 - cx, canvas_height//2 - cy
+        placed_position_translations.append((tx, ty))
+    return placed_position_translations
