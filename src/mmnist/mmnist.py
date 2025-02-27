@@ -17,6 +17,7 @@ class MovingMNIST:
         self,
         trajectory,
         affine_params,
+        train,
         path="data",
         num_digits=(
             1,
@@ -25,7 +26,7 @@ class MovingMNIST:
         num_frames=10,  # number of frames to generate
         concat=True,  # if we concat the final results (frames, 1, 28, 28) or a list of frames
     ):
-        self.mnist = MNIST(path, download=True)
+        self.mnist = MNIST(path, download=True, train=train)
         self.total_data_num = len(self.mnist)
         self.trajectory = trajectory
         self.affine_params = affine_params

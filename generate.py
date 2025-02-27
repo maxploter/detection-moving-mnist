@@ -1,4 +1,4 @@
-import sys
+import argparse
 from types import SimpleNamespace
 
 from src.mmnist.mmnist import MovingMNIST
@@ -8,6 +8,10 @@ from src.mmnist.trajectory import (
     SimpleLinearTrajectory,
     OutOfBoundsTrajectory,
 )
+
+TRAIN_SPLIT = 'train'
+TEST_SPLIT = 'test'
+DATASET_SPLITS = [TRAIN_SPLIT, TEST_SPLIT]
 
 CONFIGS = {
     "easy": {
@@ -46,17 +50,36 @@ TRAJECTORIES = {
     "random": RandomTrajectory,
 }
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Generate Detection MovingMNIST dataset with specified parameters."
+    )
+    parser.add_argument(
+        "--version",
+        type=str,
+        help=f"MMNIST version: {', '.join(CONFIGS.keys())}",
+    )
+    parser.add_argument(
+        "--split",
+        type=str,
+        help=f"Dataset splits: {', '.join(DATASET_SPLITS)}",
+    )
+    parser.add_argument(
+        "--num_frames_per_video", type=int, help="Number of frames per video."
+    )
+    parser.add_argument("--num_batches", type=int, help="Number of batches to generate.")
+    parser.add_argument("--batch_size", type=int, help="Batch size.")
 
-def main():
-    if len(sys.argv) != 5:
-        print(
-            "Usage: python3 generate.py [version] [num_frames_per_video] [num_batches] [batch_size]"
-        )
-        sys.exit(1)
-    version = sys.argv[1]
-    num_frames_per_video = int(sys.argv[2])
-    num_batches = int(sys.argv[3])
-    batch_size = int(sys.argv[4])
+    args = parser.parse_args()
+
+    return args
+
+
+def main(args):
+    version = args.version
+    num_frames_per_video = args.num_frames_per_video
+    num_batches = args.num_batches
+    batch_size = args.batch_size
 
     if version not in CONFIGS:
         raise ValueError(f"Unsupported MMNIST version: {version}")
@@ -69,16 +92,18 @@ def main():
 
     dataset = MovingMNIST(
         trajectory=trajectory,
+        train=True if args.split == TRAIN_SPLIT else False,
         affine_params=affine_params,
         num_digits=CONFIGS[version]["num_digits"],
         num_frames=num_frames_per_video,
     )
     dataset.save(
-        directory=f"mmnist-dataset/torch-tensor-format/mmnist-{version}",
+        directory=f"mmnist-dataset/torch-tensor-format/mmnist-{version}/{args.split}/",
         n_batches=num_batches,
         bs=batch_size,
     )
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args)
