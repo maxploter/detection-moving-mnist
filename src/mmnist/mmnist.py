@@ -123,7 +123,7 @@ class MovingMNIST:
         with open(os.path.join(directory, "targets.json"), "w") as f:
             json.dump(all_targets, f)
 
-        logging.info(f"Number of unused digits from dataset {len(self.mnist) - len(mnist_indices_used)}")
+        logging.info(f"Number of used digits from dataset {len(mnist_indices_used)}/{len(self.mnist)}")
         logging.info(f"Tensor-format data saved in directory: {directory}")
 
 
