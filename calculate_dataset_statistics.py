@@ -8,6 +8,8 @@ from tqdm import tqdm
 from collections import defaultdict
 from datasets import load_dataset
 
+from generate import DATASET_SPLITS
+
 
 def parse_args():
 	parser = argparse.ArgumentParser(
@@ -22,8 +24,8 @@ def parse_args():
 	parser.add_argument(
 		"--splits",
 		nargs='+',
-		default=["train", "test"],
-		help="Dataset splits to process (e.g., train, val, test)"
+		default=DATASET_SPLITS,
+		help=f"Dataset splits to process (e.g., {','.join(DATASET_SPLITS)})"
 	)
 	return parser.parse_args()
 
