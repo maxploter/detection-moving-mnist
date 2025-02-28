@@ -13,7 +13,7 @@ def load_dataset(directory):
 
     for frame_file in frame_files:
         # Load frames
-        batch_frames = torch.load(os.path.join(directory, frame_file))
+        batch_frames = torch.load(os.path.join(directory, frame_file), weights_only=True)
         frames.append(batch_frames)
 
     return frames, frame_files
