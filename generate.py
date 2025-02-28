@@ -15,7 +15,8 @@ from src.mmnist.trajectory import (
 
 TRAIN_SPLIT = 'train'
 TEST_SPLIT = 'test'
-DATASET_SPLITS = [TRAIN_SPLIT, TEST_SPLIT]
+MINI_SPLIT = 'mini'
+DATASET_SPLITS = [TRAIN_SPLIT, TEST_SPLIT, MINI_SPLIT]
 
 CONFIGS = {
     "easy": {
@@ -100,7 +101,7 @@ def main(args):
 
     dataset = MovingMNIST(
         trajectory=trajectory,
-        train=True if args.split == TRAIN_SPLIT else False,
+        train=True if args.split != TEST_SPLIT else False,
         affine_params=affine_params,
         num_digits=CONFIGS[version]["num_digits"],
         num_frames=num_frames_per_video,
