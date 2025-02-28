@@ -8,7 +8,7 @@ In this dataset, each frame is padded to have a resolution of image size 128x128
 ## How to generate torch-tensor-format datasets
 
 ```text
-python3 generate.py -h                                                                  
+python3 generate.py -h
 usage: generate.py [-h] [--version VERSION] [--split SPLIT] [--num_frames_per_video NUM_FRAMES_PER_VIDEO] [--num_videos NUM_VIDEOS]
 
 Generate Detection MovingMNIST dataset with specified parameters.
@@ -28,13 +28,13 @@ Example:
 python3 generate.py --split train --version easy --num_frames_per_video 2 --num_batches 2 --batch_size 1
 ```
 
-## How to convert torch-tensor-format to video-format
+## How to convert torch-tensor-format to huggingface videofolder format
 
 ```text
 python3 to_video.py -h
 usage: to_video.py [-h] [--version VERSION] [--split SPLIT]
 
-Convert torch-tensor-format to video-format.
+Convert torch-tensor-format to huggingface videofolder format.
 
 options:
   -h, --help         show this help message and exit
