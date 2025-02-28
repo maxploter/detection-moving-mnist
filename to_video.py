@@ -1,7 +1,7 @@
 import logging
 import os
 import argparse
-import shutil
+import json
 
 import cv2
 from tqdm import tqdm
@@ -15,7 +15,7 @@ logging.basicConfig(
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Convert torch-tensor-format to video-format."
+        description="Convert torch-tensor-format to huggingface videofolder format."
     )
     parser.add_argument(
         "--version",
@@ -36,28 +36,47 @@ def parse_args():
 def main(args):
     version = args.version
 
-    output_path_folder = f"mmnist-dataset/video-format/mmnist-{version}/{args.split}"
+    output_path_folder = f"mmnist-dataset/huggingface-videofolder-format/mmnist-{version}/{args.split}"
 
     source_path_folder = f"mmnist-dataset/torch-tensor-format/mmnist-{version}/{args.split}"
     video_frames, video_file_names = load_dataset(source_path_folder)
+    number_of_videos = len(video_frames)
 
-    for i, (video_frames, video_file_name) in enumerate(tqdm(zip(video_frames, video_file_names), desc="Processing videos")):
+    with open(os.path.join(source_path_folder, 'targets.json'), 'r') as f:
+        targets_data = json.load(f)
+
+    assert len(targets_data) == number_of_videos, "Each video has its own targets."
+
+    os.makedirs(output_path_folder, exist_ok=True)
+
+    # Process videos and create metadata
+    metadata_path = os.path.join(output_path_folder, 'metadata.jsonl')
+    with open(metadata_path, 'w') as metadata_file:
+      for frames, file_name in tqdm(zip(video_frames, video_file_names), desc="Processing videos"):
+        # Extract video index from filename
+        parts = file_name.split('_')
+        video_index = int(parts[1])
+
+        # Generate MP4 video
+        mp4_filename = f"{video_index:0{len(str(number_of_videos-1))}d}.mp4"
+        print(mp4_filename)
+        output_video_path = os.path.join(output_path_folder, mp4_filename)
         create_video_from_frames(
-            video_frames,
-            output_filename=os.path.join(
-                output_path_folder, video_file_name.replace('.pt', '.mp4')
-            ),
-            frame_rate=10.0,
-            resolution=(128, 128),
-            colormap=cv2.COLORMAP_BONE,
+          frames,
+          output_filename=output_video_path,
+          frame_rate=10.0,
+          resolution=(128, 128),
+          colormap=cv2.COLORMAP_BONE,
         )
 
-    shutil.copy2(
-        os.path.join(source_path_folder, 'targets.json'),
-        os.path.join(output_path_folder, 'targets.json'),
-    )
+        # Prepare metadata entry
+        metadata_entry = {
+          "file_name": mp4_filename,
+          "targets": targets_data[video_index]
+        }
+        metadata_file.write(json.dumps(metadata_entry) + '\n')
 
-    logging.info(f"Video-format data saved in directory: {output_path_folder}")
+    logging.info(f"Dataset saved to {output_path_folder} with metadata.jsonl")
 
 
 if __name__ == "__main__":
