@@ -16,7 +16,7 @@ from src.mmnist.trajectory import (
 TRAIN_SPLIT = 'train'
 TEST_SPLIT = 'test'
 MINI_SPLIT = 'mini'
-DATASET_SPLITS = [TRAIN_SPLIT, TEST_SPLIT, MINI_SPLIT]
+DATASET_SPLITS = [TRAIN_SPLIT, TEST_SPLIT]
 
 CONFIGS = {
     "easy": {

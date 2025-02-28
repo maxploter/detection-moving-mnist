@@ -16,7 +16,7 @@ Generate Detection MovingMNIST dataset with specified parameters.
 options:
   -h, --help            show this help message and exit
   --version VERSION     MMNIST version: easy
-  --split SPLIT         Dataset splits: train, test, mini
+  --split SPLIT         Dataset splits: train, test
   --num_frames_per_video NUM_FRAMES_PER_VIDEO
                         Number of frames per video.
   --num_videos NUM_VIDEOS
@@ -40,7 +40,7 @@ Convert torch-tensor-format to huggingface videofolder format.
 options:
   -h, --help         show this help message and exit
   --version VERSION  MMNIST version: easy, medium, hard, random
-  --split SPLIT      Dataset splits: train, test, mini
+  --split SPLIT      Dataset splits: train, test
   --in_place         Remove source files during conversion to save space
 ```
 
@@ -66,7 +66,7 @@ options:
   --dataset_dir DATASET_DIR
                         Root directory of dataset in Hugging Face videofolder format
   --splits SPLITS [SPLITS ...]
-                        Dataset splits to process (e.g., train,test,mini)
+                        Dataset splits to process (e.g., train,test)
 
 ```
 
