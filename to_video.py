@@ -10,75 +10,100 @@ from generate import CONFIGS, DATASET_SPLITS
 from src.utils.utils import load_dataset, create_video_from_frames
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+	level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Convert torch-tensor-format to huggingface videofolder format."
-    )
-    parser.add_argument(
-        "--version",
-        type=str,
-        help=f"MMNIST version: {', '.join(CONFIGS.keys())}",
-    )
-    parser.add_argument(
-        "--split",
-        type=str,
-        help=f"Dataset splits: {', '.join(DATASET_SPLITS)}",
-    )
+	parser = argparse.ArgumentParser(
+		description="Convert torch-tensor-format to huggingface videofolder format."
+	)
+	parser.add_argument(
+		"--version",
+		type=str,
+		help=f"MMNIST version: {', '.join(CONFIGS.keys())}",
+	)
+	parser.add_argument(
+		"--split",
+		type=str,
+		help=f"Dataset splits: {', '.join(DATASET_SPLITS)}",
+	)
+	parser.add_argument('--in_place', action='store_true',
+	                    help='Remove source files during conversion to save space')
 
-    args = parser.parse_args()
-
-    return args
+	args = parser.parse_args()
+	return args
 
 
 def main(args):
-    version = args.version
+	version = args.version
+	output_path_folder = f"mmnist-dataset/huggingface-videofolder-format/mmnist-{version}/{args.split}"
+	source_path_folder = f"mmnist-dataset/torch-tensor-format/mmnist-{version}/{args.split}"
 
-    output_path_folder = f"mmnist-dataset/huggingface-videofolder-format/mmnist-{version}/{args.split}"
+	# Load dataset and targets
+	video_frames, video_file_names = load_dataset(source_path_folder)
+	number_of_videos = len(video_frames)
 
-    source_path_folder = f"mmnist-dataset/torch-tensor-format/mmnist-{version}/{args.split}"
-    video_frames, video_file_names = load_dataset(source_path_folder)
-    number_of_videos = len(video_frames)
+	with open(os.path.join(source_path_folder, 'targets.json'), 'r') as f:
+		targets_data = json.load(f)
 
-    with open(os.path.join(source_path_folder, 'targets.json'), 'r') as f:
-        targets_data = json.load(f)
+	assert len(targets_data) == number_of_videos, "Each video has its own targets."
 
-    assert len(targets_data) == number_of_videos, "Each video has its own targets."
+	os.makedirs(output_path_folder, exist_ok=True)
 
-    os.makedirs(output_path_folder, exist_ok=True)
+	metadata_path = os.path.join(output_path_folder, 'metadata.jsonl')
+	with open(metadata_path, 'w') as metadata_file:
+		for frames, file_name in tqdm(zip(video_frames, video_file_names),
+		                              desc="Processing videos",
+		                              total=number_of_videos):
+			# Extract video index from filename
+			parts = file_name.split('_')
+			video_index = int(parts[1])
 
-    # Process videos and create metadata
-    metadata_path = os.path.join(output_path_folder, 'metadata.jsonl')
-    with open(metadata_path, 'w') as metadata_file:
-      for frames, file_name in tqdm(zip(video_frames, video_file_names), desc="Processing videos"):
-        # Extract video index from filename
-        parts = file_name.split('_')
-        video_index = int(parts[1])
+			# Generate MP4 video
+			mp4_filename = f"{video_index:0{len(str(number_of_videos - 1))}d}.mp4"
+			output_video_path = os.path.join(output_path_folder, mp4_filename)
+			create_video_from_frames(
+				frames,
+				output_filename=output_video_path,
+				frame_rate=10.0,
+				resolution=(128, 128),
+				colormap=cv2.COLORMAP_BONE,
+			)
 
-        # Generate MP4 video
-        mp4_filename = f"{video_index:0{len(str(number_of_videos-1))}d}.mp4"
-        print(mp4_filename)
-        output_video_path = os.path.join(output_path_folder, mp4_filename)
-        create_video_from_frames(
-          frames,
-          output_filename=output_video_path,
-          frame_rate=10.0,
-          resolution=(128, 128),
-          colormap=cv2.COLORMAP_BONE,
-        )
+			# Delete source file if flag set
+			if args.in_place:
+				source_file = os.path.join(source_path_folder, file_name)
+				try:
+					os.remove(source_file)
+					logging.debug(f"Deleted source file: {source_file}")
+				except Exception as e:
+					logging.error(f"Error deleting {source_file}: {str(e)}")
 
-        # Prepare metadata entry
-        metadata_entry = {
-          "file_name": mp4_filename,
-          "targets": targets_data[video_index]
-        }
-        metadata_file.write(json.dumps(metadata_entry) + '\n')
+			# Write metadata
+			metadata_entry = {
+				"file_name": mp4_filename,
+				"targets": targets_data[video_index]
+			}
+			metadata_file.write(json.dumps(metadata_entry) + '\n')
 
-    logging.info(f"Dataset saved to {output_path_folder} with metadata.jsonl")
+	# Clean up remaining source files if flag set
+	if args.in_place:
+		try:
+			targets_path = os.path.join(source_path_folder, 'targets.json')
+			if os.path.exists(targets_path):
+				os.remove(targets_path)
+				logging.info(f"Deleted source targets.json")
+
+			# Try to remove the now-empty directory
+			os.rmdir(source_path_folder)
+			logging.info(f"Removed empty source directory: {source_path_folder}")
+		except Exception as e:
+			logging.error(f"Error cleaning up source directory: {str(e)}")
+
+	logging.info(f"Dataset saved to {output_path_folder} with metadata.jsonl")
 
 
 if __name__ == "__main__":
-    args = parse_args()
-    main(args)
+	args = parse_args()
+	main(args)

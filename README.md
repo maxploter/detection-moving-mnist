@@ -25,14 +25,14 @@ options:
 
 Example:
 ```shell
-python3 generate.py --split train --version easy --num_frames_per_video 2 --num_batches 2 --batch_size 1
+python3 generate.py --split train --version easy --num_frames_per_video 20 --num_videos 2
 ```
 
 ## How to convert torch-tensor-format to huggingface videofolder format
 
 ```text
-python3 to_video.py -h
-usage: to_video.py [-h] [--version VERSION] [--split SPLIT]
+python3 to_video.py -h                                    
+usage: to_video.py [-h] [--version VERSION] [--split SPLIT] [--in_place]
 
 Convert torch-tensor-format to huggingface videofolder format.
 
@@ -40,6 +40,7 @@ options:
   -h, --help         show this help message and exit
   --version VERSION  MMNIST version: easy, medium, hard, random
   --split SPLIT      Dataset splits: train, test
+  --in_place         Remove source files during conversion to save space
 ```
 
 Example:
@@ -48,15 +49,6 @@ python3 to_video.py --version easy --split test
 ```
 
 Video conversion uses a rate of 10 frames per second. This can be adjusted in `src/utils/utils.py`.
-
-## Dataset Versions
-
-This dataset currently supports 4 versions: easy, medium, hard, and random.
-
-Suggestions:
-
-- Use a small `[num_frames_per_video]`, such as 20, for the easy version because the digit will quickly move out of
-  bounds.
 
 ## Acknowledgements
 
