@@ -7,12 +7,11 @@ import cv2
 from tqdm import tqdm
 
 from generate import CONFIGS, DATASET_SPLITS
-from src.utils.utils import load_dataset, create_video_from_frames
+from src.utils.utils import create_video_from_frames, load_dataset
 
 logging.basicConfig(
 	level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
-
 
 def parse_args():
 	parser = argparse.ArgumentParser(
@@ -31,8 +30,7 @@ def parse_args():
 	parser.add_argument('--in_place', action='store_true',
 	                    help='Remove source files during conversion to save space')
 
-	args = parser.parse_args()
-	return args
+	return parser.parse_args()
 
 
 def main(args):
@@ -40,29 +38,28 @@ def main(args):
 	output_path_folder = f"mmnist-dataset/huggingface-videofolder-format/mmnist-{version}/{args.split}"
 	source_path_folder = f"mmnist-dataset/torch-tensor-format/mmnist-{version}/{args.split}"
 
-	# Load dataset and targets
-	video_frames, video_file_names = load_dataset(source_path_folder)
-	number_of_videos = len(video_frames)
+	# Get list of files first to count videos
+	frame_files = sorted([f for f in os.listdir(source_path_folder) if f.endswith("_frames.pt")])
+	number_of_videos = len(frame_files)
+	number_of_digits = len(str(number_of_videos - 1))
 
+	# Load targets once
 	with open(os.path.join(source_path_folder, 'targets.json'), 'r') as f:
 		targets_data = json.load(f)
-
 	assert len(targets_data) == number_of_videos, "Each video has its own targets."
 
 	os.makedirs(output_path_folder, exist_ok=True)
 
 	metadata_path = os.path.join(output_path_folder, 'metadata.jsonl')
 	with open(metadata_path, 'w') as metadata_file:
-		for frames, file_name in tqdm(zip(video_frames, video_file_names),
-		                              desc="Processing videos",
-		                              total=number_of_videos):
+		for frames, file_name in tqdm(load_dataset(source_path_folder), total=number_of_videos, desc="Processing videos"):
 			# Extract video index from filename
 			parts = file_name.split('_')
 			video_index = int(parts[1])
 
-			# Generate MP4 video
-			mp4_filename = f"{video_index:0{len(str(number_of_videos - 1))}d}.mp4"
+			mp4_filename = f"{video_index:0{number_of_digits}d}.mp4"
 			output_video_path = os.path.join(output_path_folder, mp4_filename)
+
 			create_video_from_frames(
 				frames,
 				output_filename=output_video_path,
@@ -80,7 +77,7 @@ def main(args):
 				except Exception as e:
 					logging.error(f"Error deleting {source_file}: {str(e)}")
 
-			# Write metadata
+			# Write metadata using current video index
 			metadata_entry = {
 				"file_name": mp4_filename,
 				"targets": targets_data[video_index]

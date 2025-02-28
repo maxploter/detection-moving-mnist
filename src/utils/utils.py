@@ -7,16 +7,10 @@ import torchvision.transforms.functional as TF
 
 
 def load_dataset(directory):
-    frames = []
-
-    frame_files = sorted([f for f in os.listdir(directory) if f.endswith("_frames.pt")])
-
-    for frame_file in frame_files:
-        # Load frames
-        batch_frames = torch.load(os.path.join(directory, frame_file), weights_only=True)
-        frames.append(batch_frames)
-
-    return frames, frame_files
+	"""Generator that yields one video at a time"""
+	frame_files = sorted([f for f in os.listdir(directory) if f.endswith("_frames.pt")])
+	for frame_file in frame_files:
+		yield torch.load(os.path.join(directory, frame_file), weights_only=True), frame_file
 
 
 def create_video_from_frames(
