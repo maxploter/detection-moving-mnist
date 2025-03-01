@@ -8,8 +8,8 @@ In this dataset, each frame is padded to have a resolution of image size 128x128
 ## How to generate torch-tensor-format datasets
 
 ```text
-detection-moving-mnist % python3 generate.py -h                                                                                         
-usage: generate.py [-h] [--version VERSION] [--split SPLIT] [--num_frames_per_video NUM_FRAMES_PER_VIDEO] [--num_videos NUM_VIDEOS] [--whole_dataset] [--seed SEED]
+python3 generate.py -h                                                                                           
+usage: generate.py [-h] [--version VERSION] [--split SPLIT] [--num_frames_per_video NUM_FRAMES_PER_VIDEO] [--num_videos NUM_VIDEOS] [--whole_dataset] [--seed SEED] [--hf_videofolder_format]
 
 Generate Detection MovingMNIST dataset with specified parameters.
 
@@ -23,11 +23,13 @@ options:
                         Number of videos.
   --whole_dataset       We make sure all MNIST digits are used for the dataset.
   --seed SEED           Seed.
+  --hf_videofolder_format
+                        Save in Hugging Face video folder format.
 ```
 
 Example:
 ```shell
-python3 generate.py --split train --version easy --num_frames_per_video 20 --num_videos 60000
+python3 generate.py --split train --version easy --num_frames_per_video 20 --num_videos 60000 --whole_dataset --hf_videofolder_format
 ```
 
 ## How to convert torch-tensor-format to huggingface videofolder format

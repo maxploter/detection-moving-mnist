@@ -1,4 +1,5 @@
 import argparse
+import os
 import random
 from types import SimpleNamespace
 
@@ -75,7 +76,7 @@ def parse_args():
     parser.add_argument("--num_videos", type=int, help="Number of videos.")
     parser.add_argument('--whole_dataset', action='store_true', help='We make sure all MNIST digits are used for the dataset.')
     parser.add_argument("--seed", type=int, default=5561, help="Seed.")
-
+    parser.add_argument('--hf_videofolder_format', action='store_true', help='Save in Hugging Face video folder format.')
     args = parser.parse_args()
 
     return args
@@ -100,6 +101,14 @@ def main(args):
     if trajectory is None:
         raise NotImplementedError(f"Trajectory not implemented for version: {version}")
 
+    format_folder = "huggingface-videofolder-format" if args.hf_videofolder_format else "torch-tensor-format"
+    directory = os.path.join(
+        "mmnist-dataset",
+        format_folder,
+        f"mmnist-{version}",
+        args.split
+    )
+
     dataset = MovingMNIST(
         trajectory=trajectory,
         train=True if args.split != TEST_SPLIT else False,
@@ -108,9 +117,10 @@ def main(args):
         num_frames=num_frames_per_video,
     )
     dataset.save(
-        directory=f"mmnist-dataset/torch-tensor-format/mmnist-{version}/{args.split}/",
+        directory=directory,
         num_videos=args.num_videos,
         whole_dataset=args.whole_dataset,
+        hf_videofolder_format=args.hf_videofolder_format
     )
 
 
