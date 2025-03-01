@@ -4,10 +4,13 @@ import math
 import os
 import random
 
+import cv2
 import torch
 import torchvision.transforms.functional as TF
 from torchvision.datasets import MNIST
 from tqdm import tqdm
+
+from src.utils.utils import create_video_from_frames
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -107,42 +110,101 @@ class MovingMNIST:
             mnist_indices
         )
 
-    def save(self, directory, num_videos, whole_dataset=False):
+    def save(self, directory, num_videos, whole_dataset=False, hf_videofolder_format=False):
         if not os.path.exists(directory):
             os.makedirs(directory)
 
-        all_targets = []
         mnist_indices_used = set()
         seq_index = 0
 
-        for _ in tqdm(range(num_videos), desc="Processing sequences"):
-            frames, targets, mnist_indices = self[0]  # Get a single sequence
-            torch.save(frames, os.path.join(directory, f"video_{seq_index}_frames.pt"))
-            all_targets.append(targets)
-            mnist_indices_used.update(list(mnist_indices))
-            seq_index += 1
+        if hf_videofolder_format:
+            number_of_videos_digits = len(str(num_videos)) + 1
 
-        # Second loop: cover the entire MNIST dataset if required
-        if whole_dataset and len(mnist_indices_used) < len(self.mnist):
-            initial_covered = len(mnist_indices_used)
-            with tqdm(
-                total=len(self.mnist),
-                initial=initial_covered,
-                desc="Covering MNIST dataset"
-            ) as pbar:
-                while len(mnist_indices_used) < len(self.mnist):
+            metadata_path = os.path.join(directory, 'metadata.jsonl')
+            with open(metadata_path, 'w') as metadata_file:
+                # Process initial num_videos
+                for _ in tqdm(range(num_videos), desc="Processing sequences"):
                     frames, targets, mnist_indices = self[0]
-                    torch.save(frames, os.path.join(directory, f"video_{seq_index}_frames.pt"))
-                    all_targets.append(targets)
-                    prev_covered = len(mnist_indices_used)
-                    mnist_indices_used.update(list(mnist_indices))
-                    new_covered = len(mnist_indices_used)
-                    pbar.update(new_covered - prev_covered)
+                    video_filename = f"{seq_index:0{number_of_videos_digits}d}.mp4"
+                    output_path = os.path.join(directory, video_filename)
+                    create_video_from_frames(
+                        frames=frames.squeeze(1),  # Remove channel dimension
+                        output_filename=output_path,
+                        frame_rate=10.0,
+                        resolution=(128, 128),
+                        colormap=cv2.COLORMAP_BONE
+                    )
+                    metadata_entry = {
+                        "file_name": video_filename,
+                        "targets": targets
+                    }
+                    metadata_file.write(json.dumps(metadata_entry) + '\n')
+                    mnist_indices_used.update(mnist_indices)
                     seq_index += 1
 
-        # Save global targets JSON
-        with open(os.path.join(directory, "targets.json"), "w") as f:
-            json.dump(all_targets, f)
+                # Cover entire MNIST dataset if required
+                if whole_dataset and len(mnist_indices_used) < len(self.mnist):
+                    initial_covered = len(mnist_indices_used)
+                    with tqdm(
+                        total=len(self.mnist),
+                        initial=initial_covered,
+                        desc="Covering MNIST dataset"
+                    ) as pbar:
+                        while len(mnist_indices_used) < len(self.mnist):
+                            frames, targets, mnist_indices = self[0]
+                            video_filename = f"{seq_index:0{number_of_videos_digits}d}.mp4"
+                            output_path = os.path.join(directory, video_filename)
+                            create_video_from_frames(
+                                frames=frames.squeeze(1),
+                                output_filename=output_path,
+                                frame_rate=10.0,
+                                resolution=(128, 128),
+                                colormap=cv2.COLORMAP_BONE
+                            )
+                            metadata_entry = {
+                                "file_name": video_filename,
+                                "targets": targets
+                            }
+                            metadata_file.write(json.dumps(metadata_entry) + '\n')
+                            prev_covered = len(mnist_indices_used)
+                            mnist_indices_used.update(mnist_indices)
+                            new_covered = len(mnist_indices_used)
+                            pbar.update(new_covered - prev_covered)
+                            seq_index += 1
+
+            logging.info(f"Number of used digits: {len(mnist_indices_used)}/{len(self.mnist)}")
+            logging.info(f"Video dataset saved to {directory}")
+        else:
+            all_targets = []
+
+            for _ in tqdm(range(num_videos), desc="Processing sequences"):
+                frames, targets, mnist_indices = self[0]  # Get a single sequence
+                torch.save(frames, os.path.join(directory, f"video_{seq_index}_frames.pt"))
+                all_targets.append(targets)
+                mnist_indices_used.update(list(mnist_indices))
+                seq_index += 1
+
+            # Second loop: cover the entire MNIST dataset if required
+            if whole_dataset and len(mnist_indices_used) < len(self.mnist):
+                initial_covered = len(mnist_indices_used)
+                with tqdm(
+                    total=len(self.mnist),
+                    initial=initial_covered,
+                    desc="Covering MNIST dataset"
+                ) as pbar:
+                    while len(mnist_indices_used) < len(self.mnist):
+                        frames, targets, mnist_indices = self[0]
+                        torch.save(frames, os.path.join(directory, f"video_{seq_index}_frames.pt"))
+                        all_targets.append(targets)
+                        prev_covered = len(mnist_indices_used)
+                        mnist_indices_used.update(list(mnist_indices))
+                        new_covered = len(mnist_indices_used)
+                        pbar.update(new_covered - prev_covered)
+                        seq_index += 1
+
+            # Save global targets JSON
+            with open(os.path.join(directory, "targets.json"), "w") as f:
+                json.dump(all_targets, f)
 
         logging.info(f"Number of used digits from dataset {len(mnist_indices_used)}/{len(self.mnist)}")
         logging.info(f"Tensor-format data saved in directory: {directory}")
