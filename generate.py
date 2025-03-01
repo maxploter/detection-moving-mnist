@@ -74,6 +74,7 @@ def parse_args():
         "--num_frames_per_video", type=int, help="Number of frames per video."
     )
     parser.add_argument("--num_videos", type=int, help="Number of videos.")
+    parser.add_argument("--num_videos_hard", type=int, help="Number of videos hard limit used when whole_dataset is set.")
     parser.add_argument('--whole_dataset', action='store_true', help='We make sure all MNIST digits are used for the dataset.')
     parser.add_argument("--seed", type=int, default=5561, help="Seed.")
     parser.add_argument('--hf_videofolder_format', action='store_true', help='Save in Hugging Face video folder format.')
@@ -119,6 +120,7 @@ def main(args):
     dataset.save(
         directory=directory,
         num_videos=args.num_videos,
+        num_videos_hard=args.num_videos_hard,
         whole_dataset=args.whole_dataset,
         hf_videofolder_format=args.hf_videofolder_format
     )
