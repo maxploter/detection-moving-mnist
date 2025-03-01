@@ -8,8 +8,8 @@ In this dataset, each frame is padded to have a resolution of image size 128x128
 ## How to generate torch-tensor-format datasets
 
 ```text
-python3 generate.py -h
-usage: generate.py [-h] [--version VERSION] [--split SPLIT] [--num_frames_per_video NUM_FRAMES_PER_VIDEO] [--num_videos NUM_VIDEOS] [--seed SEED]
+detection-moving-mnist % python3 generate.py -h                                                                                         
+usage: generate.py [-h] [--version VERSION] [--split SPLIT] [--num_frames_per_video NUM_FRAMES_PER_VIDEO] [--num_videos NUM_VIDEOS] [--whole_dataset] [--seed SEED]
 
 Generate Detection MovingMNIST dataset with specified parameters.
 
@@ -21,6 +21,7 @@ options:
                         Number of frames per video.
   --num_videos NUM_VIDEOS
                         Number of videos.
+  --whole_dataset       We make sure all MNIST digits are used for the dataset.
   --seed SEED           Seed.
 ```
 
