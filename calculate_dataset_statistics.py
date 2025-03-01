@@ -123,7 +123,7 @@ def main(args):
 				f"Normalized Digits per Frame Distribution ({split})",
 				"Number of Digits",
 				"Normalized Frequency",
-				bins=np.arange(0, max_digits + 2) - 0.5,
+				bins=np.arange(1, max_digits + 1),
 				filename=plt_path
 			)
 
