@@ -110,7 +110,7 @@ class MovingMNIST:
             mnist_indices
         )
 
-    def save(self, directory, num_videos, whole_dataset=False, hf_videofolder_format=False):
+    def save(self, directory, num_videos, num_videos_hard, whole_dataset=False, hf_videofolder_format=False):
         if not os.path.exists(directory):
             os.makedirs(directory)
 
@@ -150,7 +150,7 @@ class MovingMNIST:
                         initial=initial_covered,
                         desc="Covering MNIST dataset"
                     ) as pbar:
-                        while len(mnist_indices_used) < len(self.mnist):
+                        while len(mnist_indices_used) < len(self.mnist) and seq_index < num_videos_hard:
                             frames, targets, mnist_indices = self[0]
                             video_filename = f"{seq_index:0{number_of_videos_digits}d}.mp4"
                             output_path = os.path.join(directory, video_filename)
