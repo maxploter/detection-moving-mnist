@@ -73,6 +73,7 @@ def parse_args():
         "--num_frames_per_video", type=int, help="Number of frames per video."
     )
     parser.add_argument("--num_videos", type=int, help="Number of videos.")
+    parser.add_argument('--whole_dataset', action='store_true', help='We make sure all MNIST digits are used for the dataset.')
     parser.add_argument("--seed", type=int, default=5561, help="Seed.")
 
     args = parser.parse_args()
@@ -108,7 +109,8 @@ def main(args):
     )
     dataset.save(
         directory=f"mmnist-dataset/torch-tensor-format/mmnist-{version}/{args.split}/",
-        num_videos=args.num_videos
+        num_videos=args.num_videos,
+        whole_dataset=args.whole_dataset,
     )
 
 

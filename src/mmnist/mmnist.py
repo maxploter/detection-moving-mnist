@@ -107,17 +107,38 @@ class MovingMNIST:
             mnist_indices
         )
 
-    def save(self, directory, num_videos):
+    def save(self, directory, num_videos, whole_dataset=False):
         if not os.path.exists(directory):
             os.makedirs(directory)
 
         all_targets = []
         mnist_indices_used = set()
-        for seq_index in tqdm(range(num_videos), desc="Processing sequences"):
+        seq_index = 0
+
+        for _ in tqdm(range(num_videos), desc="Processing sequences"):
             frames, targets, mnist_indices = self[0]  # Get a single sequence
             torch.save(frames, os.path.join(directory, f"video_{seq_index}_frames.pt"))
             all_targets.append(targets)
             mnist_indices_used.update(list(mnist_indices))
+            seq_index += 1
+
+        # Second loop: cover the entire MNIST dataset if required
+        if whole_dataset and len(mnist_indices_used) < len(self.mnist):
+            initial_covered = len(mnist_indices_used)
+            with tqdm(
+                total=len(self.mnist),
+                initial=initial_covered,
+                desc="Covering MNIST dataset"
+            ) as pbar:
+                while len(mnist_indices_used) < len(self.mnist):
+                    frames, targets, mnist_indices = self[0]
+                    torch.save(frames, os.path.join(directory, f"video_{seq_index}_frames.pt"))
+                    all_targets.append(targets)
+                    prev_covered = len(mnist_indices_used)
+                    mnist_indices_used.update(list(mnist_indices))
+                    new_covered = len(mnist_indices_used)
+                    pbar.update(new_covered - prev_covered)
+                    seq_index += 1
 
         # Save global targets JSON
         with open(os.path.join(directory, "targets.json"), "w") as f:
