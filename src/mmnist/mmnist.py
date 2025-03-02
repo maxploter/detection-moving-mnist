@@ -31,6 +31,7 @@ class MovingMNIST:
         num_frames=10,  # number of frames to generate
         concat=True,  # if we concat the final results (frames, 1, 28, 28) or a list of frames
     ):
+        self.train = train
         self.mnist = MNIST(path, download=True, train=train)
         self.total_data_num = len(self.mnist)
         self.trajectory = trajectory
@@ -110,9 +111,10 @@ class MovingMNIST:
             mnist_indices
         )
 
-    def save(self, directory, num_videos, num_videos_hard, whole_dataset=False, hf_videofolder_format=False):
+    def save(self, directory, num_videos, num_videos_hard, whole_dataset=False, hf_videofolder_format=False, hf_arrow_format=False):
         if not os.path.exists(directory):
             os.makedirs(directory)
+        assert not (hf_videofolder_format and hf_arrow_format), "Only one format can be selected."
 
         mnist_indices_used = set()
         seq_index = 0
@@ -174,6 +176,80 @@ class MovingMNIST:
 
             logging.info(f"Number of used digits: {len(mnist_indices_used)}/{len(self.mnist)}")
             logging.info(f"Video dataset saved to {directory}")
+        elif hf_arrow_format:
+            from datasets import Dataset, Features, Array4D, Sequence, Value
+            import numpy as np
+
+            # Define features for the dataset
+            features = Features({
+                "video": Array4D(shape=(self.num_frames, 128, 128, 1), dtype="float64"),
+                "labels": Sequence(Sequence(Value("uint8"))),
+                # change format from float to int
+                "center_points": Sequence(Sequence(Sequence(Value("int32")))),
+                "mnist_indices": Sequence(Value("int32")),
+            })
+
+            def video_generator():
+                nonlocal mnist_indices_used, seq_index
+                # Generate initial num_videos
+                for _ in range(num_videos):
+                    frames, targets, mnist_indices = self[0]
+                    frames = frames.detach()
+                    frames_np = np.array(frames) * 255.0
+                    frames_np = np.transpose(frames_np, (0, 2, 3, 1))  # (num_frames, H, W, C=1)
+                    # Extract labels and center points
+                    labels = [t['labels'] for t in targets]
+                    center_points = [t['center_points'] for t in targets]
+                    yield {
+                        "video": frames_np,
+                        "labels": labels,
+                        "center_points": center_points,
+                        "mnist_indices": list(mnist_indices),
+                    }
+                    mnist_indices_used.update(mnist_indices)
+                    seq_index += 1
+
+                # Generate additional videos if whole_dataset is enabled
+                if whole_dataset and len(mnist_indices_used) < len(self.mnist):
+                    while True:
+                        if num_videos_hard is not None and seq_index >= num_videos_hard:
+                            break
+                        if len(mnist_indices_used) >= len(self.mnist):
+                            break
+                        frames, targets, mnist_indices = self[0]
+                        frames = frames.detach()
+                        frames_np = np.array(frames) * 255.0
+                        frames_np = np.transpose(frames_np, (0, 2, 3, 1))  # (num_frames, H, W, C=1)
+                        labels = [t['labels'] for t in targets]
+                        center_points = [t['center_points'] for t in targets]
+                        yield {
+                            "video": frames_np,
+                            "labels": labels,
+                            "center_points": center_points,
+                            "mnist_indices": list(mnist_indices),
+                        }
+                        prev_covered = len(mnist_indices_used)
+                        mnist_indices_used.update(mnist_indices)
+                        seq_index += 1
+
+            # Create dataset from generator
+            dataset = Dataset.from_generator(
+                video_generator,
+                features=features,
+            )
+
+            # Save the dataset with sharding
+            num_shards = 12 if self.train else 2  # Adjust based on split
+            dataset.save_to_disk(
+                directory,
+                num_shards=num_shards,
+                storage_options={"compression": "snappy"}
+            )
+
+            logging.info(f"Number of used digits: {len(mnist_indices_used)}/{len(self.mnist)}")
+            logging.info(f"Arrow-format dataset saved to {directory}")
+
+
         else:
             all_targets = []
 

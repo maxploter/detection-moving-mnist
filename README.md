@@ -11,8 +11,8 @@ In this dataset, each frame is padded to have a resolution of image size 128x128
 ## How to generate torch-tensor-format datasets
 
 ```text
-python3 generate.py -h
-usage: generate.py [-h] [--version VERSION] [--split SPLIT] [--num_frames_per_video NUM_FRAMES_PER_VIDEO] [--num_videos NUM_VIDEOS] [--num_videos_hard NUM_VIDEOS_HARD] [--whole_dataset] [--seed SEED] [--hf_videofolder_format]
+python3 generate.py -h                    
+usage: generate.py [-h] [--version VERSION] [--split SPLIT] [--num_frames_per_video NUM_FRAMES_PER_VIDEO] [--num_videos NUM_VIDEOS] [--num_videos_hard NUM_VIDEOS_HARD] [--whole_dataset] [--seed SEED] [--hf_videofolder_format] [--hf_arrow_format]
 
 Generate Detection MovingMNIST dataset with specified parameters.
 
@@ -30,11 +30,12 @@ options:
   --seed SEED           Seed.
   --hf_videofolder_format
                         Save in Hugging Face video folder format.
+  --hf_arrow_format     Save in Hugging Face arrow format.
 ```
 
 Example:
 ```shell
-python3 generate.py --split train --version easy --num_frames_per_video 20 --num_videos 60000 --num_videos_hard 120000 --whole_dataset --hf_videofolder_format
+python3 generate.py --split train --version easy --num_frames_per_video 20 --num_videos 60000 --num_videos_hard 120000 --whole_dataset --hf_arrow_format
 ```
 
 ## How to convert torch-tensor-format to huggingface videofolder format
@@ -59,7 +60,7 @@ python3 to_video.py --version easy --split test
 
 Video conversion uses a rate of 10 frames per second. This can be adjusted in `src/utils/utils.py`.
 
-## How to calculate dataset statistics (huggingface videofolder format).
+## How to calculate dataset statistics (huggingface arrow format).
 
 Important this script supports only huggingface videofolder format.
 
@@ -80,7 +81,7 @@ options:
 
 Example:
 ```shell
-python3 calculate_dataset_statistics.py --dataset_dir mmnist-dataset/huggingface-videofolder-format/mmnist-easy
+python3 calculate_dataset_statistics.py --dataset_dir mmnist-dataset/huggingface-arrow-format/mmnist-easy
 ```
 
 ## Acknowledgements

@@ -50,8 +50,7 @@ def main(args):
 
 		try:
 			dataset = load_dataset(
-				"videofolder",
-				data_dir=args.dataset_dir,
+				args.dataset_dir,
 				split=split,
 				trust_remote_code=True
 			)
@@ -60,8 +59,6 @@ def main(args):
 			continue
 
 		# Initialize statistics accumulators
-		sum_pixels = None
-		sum_squares = None
 		total_pixels = 0
 
 		# Initialize histogram counters
@@ -70,12 +67,9 @@ def main(args):
 		total_digits = 0
 
 		# Get first video to determine channels
-		try:
-			first_video = next(iter(dataset))['video']
-			num_channels = first_video[-1].asnumpy().shape[-1]
-		except StopIteration:
-			print(f"No videos found in {split} split")
-			continue
+		first_example = next(iter(dataset))
+		video = np.array(first_example['video'])
+		num_channels = 1 if video.ndim == 3 else video.shape[-1]
 
 		# Re-initialize with proper channel count
 		sum_pixels = torch.zeros(num_channels, dtype=torch.float64)
@@ -83,7 +77,7 @@ def main(args):
 
 		for example in tqdm(dataset, desc=f"Processing {split} videos"):
 			# Process video for statistics
-			video = example['video'].get_batch(range(len(example["video"]))).asnumpy().astype(np.float32) / 255.0
+			video = np.array(example['video']).astype(np.float32) / 255.0
 
 			if video.ndim == 3:
 				video = np.expand_dims(video, axis=-1)
@@ -94,15 +88,14 @@ def main(args):
 			total_pixels += video_tensor.shape[0] * video_tensor.shape[1] * video_tensor.shape[2]
 
 			# Process targets for histograms
-			if 'targets' in example:
-				for frame_targets in example['targets']:
-					if 'labels' in frame_targets:
-						num_digits = len(frame_targets['labels'])
-						digits_per_frame.append(num_digits)
+			for i in range(video_tensor.shape[0]):
+				frame_labels = example['labels'][i]
+				num_digits = len(frame_labels)
+				digits_per_frame.append(num_digits)
 
-						for digit in frame_targets['labels']:
-							digit_counts[digit] += 1
-							total_digits += 1
+				for digit in frame_labels:
+					digit_counts[digit] += 1
+					total_digits += 1
 
 		# Calculate and store statistics
 		mean = sum_pixels / total_pixels
