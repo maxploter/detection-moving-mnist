@@ -78,6 +78,7 @@ def parse_args():
     parser.add_argument('--whole_dataset', action='store_true', help='We make sure all MNIST digits are used for the dataset.')
     parser.add_argument("--seed", type=int, default=5561, help="Seed.")
     parser.add_argument('--hf_videofolder_format', action='store_true', help='Save in Hugging Face video folder format.')
+    parser.add_argument('--hf_arrow_format', action='store_true', help='Save in Hugging Face arrow format.')
     args = parser.parse_args()
 
     return args
@@ -103,6 +104,7 @@ def main(args):
         raise NotImplementedError(f"Trajectory not implemented for version: {version}")
 
     format_folder = "huggingface-videofolder-format" if args.hf_videofolder_format else "torch-tensor-format"
+    format_folder = "huggingface-arrow-format" if args.hf_arrow_format else format_folder
     directory = os.path.join(
         "mmnist-dataset",
         format_folder,
@@ -122,7 +124,8 @@ def main(args):
         num_videos=args.num_videos,
         num_videos_hard=args.num_videos_hard,
         whole_dataset=args.whole_dataset,
-        hf_videofolder_format=args.hf_videofolder_format
+        hf_videofolder_format=args.hf_videofolder_format,
+        hf_arrow_format=args.hf_arrow_format,
     )
 
 
