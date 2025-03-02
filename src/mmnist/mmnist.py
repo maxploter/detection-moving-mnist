@@ -182,7 +182,7 @@ class MovingMNIST:
 
             # Define features for the dataset
             features = Features({
-                "video": Array4D(shape=(self.num_frames, 128, 128, 1), dtype="float64"),
+                "video": Array4D(shape=(self.num_frames, 128, 128, 1), dtype="float32"),
                 "labels": Sequence(Sequence(Value("uint8"))),
                 # change format from float to int
                 "center_points": Sequence(Sequence(Sequence(Value("int32")))),
