@@ -182,10 +182,10 @@ class MovingMNIST:
 
             # Define features for the dataset
             features = Features({
-                "video": Array4D(shape=(self.num_frames, 128, 128, 1), dtype="float32"),
+                "video": Array4D(shape=(self.num_frames, 128, 128), dtype="uint8"),
                 "labels": Sequence(Sequence(Value("uint8"))),
                 # change format from float to int
-                "center_points": Sequence(Sequence(Sequence(Value("int32")))),
+                "center_points": Sequence(Sequence(Sequence(Value("int16")))),
             })
 
             def video_generator():
@@ -193,9 +193,10 @@ class MovingMNIST:
                 # Generate initial num_videos
                 for _ in range(num_videos):
                     frames, targets, mnist_indices = self[0]
-                    frames = frames.detach()
-                    frames_np = np.array(frames) * 255.0
-                    frames_np = np.transpose(frames_np, (0, 2, 3, 1))  # (num_frames, H, W, C=1)
+
+                    # Convert directly to uint8 and remove channel dimension
+                    frames_np = (frames.detach().numpy() * 255).astype(np.uint8)
+                    frames_np = frames_np.squeeze(axis=2)  # Remove channel dimension
                     # Extract labels and center points
                     labels = [t['labels'] for t in targets]
                     center_points = [t['center_points'] for t in targets]
@@ -215,9 +216,10 @@ class MovingMNIST:
                         if len(mnist_indices_used) >= len(self.mnist):
                             break
                         frames, targets, mnist_indices = self[0]
-                        frames = frames.detach()
-                        frames_np = np.array(frames) * 255.0
-                        frames_np = np.transpose(frames_np, (0, 2, 3, 1))  # (num_frames, H, W, C=1)
+
+                        # Convert directly to uint8 and remove channel dimension
+                        frames_np = (frames.detach().numpy() * 255).astype(np.uint8)
+                        frames_np = frames_np.squeeze(axis=2)  # Remove channel dimension
                         labels = [t['labels'] for t in targets]
                         center_points = [t['center_points'] for t in targets]
                         yield {
