@@ -177,16 +177,15 @@ class MovingMNIST:
             logging.info(f"Number of used digits: {len(mnist_indices_used)}/{len(self.mnist)}")
             logging.info(f"Video dataset saved to {directory}")
         elif hf_arrow_format:
-            from datasets import Dataset, Features, Array4D, Sequence, Value
+            from datasets import Dataset, Features, Array3D, Sequence, Value
             import numpy as np
 
             # Define features for the dataset
             features = Features({
-                "video": Array4D(shape=(self.num_frames, 128, 128, 1), dtype="float64"),
+                "video": Array3D(shape=(self.num_frames, 128, 128), dtype="uint8"),
                 "labels": Sequence(Sequence(Value("uint8"))),
                 # change format from float to int
-                "center_points": Sequence(Sequence(Sequence(Value("int32")))),
-                "mnist_indices": Sequence(Value("int32")),
+                "center_points": Sequence(Sequence(Sequence(Value("int16")))),
             })
 
             def video_generator():
@@ -194,9 +193,10 @@ class MovingMNIST:
                 # Generate initial num_videos
                 for _ in range(num_videos):
                     frames, targets, mnist_indices = self[0]
-                    frames = frames.detach()
-                    frames_np = np.array(frames) * 255.0
-                    frames_np = np.transpose(frames_np, (0, 2, 3, 1))  # (num_frames, H, W, C=1)
+
+                    # Convert directly to uint8 and remove channel dimension
+                    frames_np = (frames.detach().numpy() * 255).astype(np.uint8)
+                    frames_np = frames_np.squeeze(axis=1)  # Remove channel dimension
                     # Extract labels and center points
                     labels = [t['labels'] for t in targets]
                     center_points = [t['center_points'] for t in targets]
@@ -204,7 +204,6 @@ class MovingMNIST:
                         "video": frames_np,
                         "labels": labels,
                         "center_points": center_points,
-                        "mnist_indices": list(mnist_indices),
                     }
                     mnist_indices_used.update(mnist_indices)
                     seq_index += 1
@@ -217,18 +216,17 @@ class MovingMNIST:
                         if len(mnist_indices_used) >= len(self.mnist):
                             break
                         frames, targets, mnist_indices = self[0]
-                        frames = frames.detach()
-                        frames_np = np.array(frames) * 255.0
-                        frames_np = np.transpose(frames_np, (0, 2, 3, 1))  # (num_frames, H, W, C=1)
+
+                        # Convert directly to uint8 and remove channel dimension
+                        frames_np = (frames.detach().numpy() * 255).astype(np.uint8)
+                        frames_np = frames_np.squeeze(axis=1)  # Remove channel dimension
                         labels = [t['labels'] for t in targets]
                         center_points = [t['center_points'] for t in targets]
                         yield {
                             "video": frames_np,
                             "labels": labels,
                             "center_points": center_points,
-                            "mnist_indices": list(mnist_indices),
                         }
-                        prev_covered = len(mnist_indices_used)
                         mnist_indices_used.update(mnist_indices)
                         seq_index += 1
 
