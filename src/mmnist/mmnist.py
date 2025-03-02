@@ -177,12 +177,12 @@ class MovingMNIST:
             logging.info(f"Number of used digits: {len(mnist_indices_used)}/{len(self.mnist)}")
             logging.info(f"Video dataset saved to {directory}")
         elif hf_arrow_format:
-            from datasets import Dataset, Features, Array4D, Sequence, Value
+            from datasets import Dataset, Features, Array3D, Sequence, Value
             import numpy as np
 
             # Define features for the dataset
             features = Features({
-                "video": Array4D(shape=(self.num_frames, 128, 128), dtype="uint8"),
+                "video": Array3D(shape=(self.num_frames, 128, 128), dtype="uint8"),
                 "labels": Sequence(Sequence(Value("uint8"))),
                 # change format from float to int
                 "center_points": Sequence(Sequence(Sequence(Value("int16")))),
@@ -196,7 +196,7 @@ class MovingMNIST:
 
                     # Convert directly to uint8 and remove channel dimension
                     frames_np = (frames.detach().numpy() * 255).astype(np.uint8)
-                    frames_np = frames_np.squeeze(axis=2)  # Remove channel dimension
+                    frames_np = frames_np.squeeze(axis=1)  # Remove channel dimension
                     # Extract labels and center points
                     labels = [t['labels'] for t in targets]
                     center_points = [t['center_points'] for t in targets]
@@ -219,7 +219,7 @@ class MovingMNIST:
 
                         # Convert directly to uint8 and remove channel dimension
                         frames_np = (frames.detach().numpy() * 255).astype(np.uint8)
-                        frames_np = frames_np.squeeze(axis=2)  # Remove channel dimension
+                        frames_np = frames_np.squeeze(axis=1)  # Remove channel dimension
                         labels = [t['labels'] for t in targets]
                         center_points = [t['center_points'] for t in targets]
                         yield {
