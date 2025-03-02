@@ -186,7 +186,6 @@ class MovingMNIST:
                 "labels": Sequence(Sequence(Value("uint8"))),
                 # change format from float to int
                 "center_points": Sequence(Sequence(Sequence(Value("int32")))),
-                "mnist_indices": Sequence(Value("int32")),
             })
 
             def video_generator():
@@ -204,7 +203,6 @@ class MovingMNIST:
                         "video": frames_np,
                         "labels": labels,
                         "center_points": center_points,
-                        "mnist_indices": list(mnist_indices),
                     }
                     mnist_indices_used.update(mnist_indices)
                     seq_index += 1
@@ -226,9 +224,7 @@ class MovingMNIST:
                             "video": frames_np,
                             "labels": labels,
                             "center_points": center_points,
-                            "mnist_indices": list(mnist_indices),
                         }
-                        prev_covered = len(mnist_indices_used)
                         mnist_indices_used.update(mnist_indices)
                         seq_index += 1
 
