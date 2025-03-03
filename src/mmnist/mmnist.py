@@ -4,13 +4,10 @@ import math
 import os
 import random
 
-import cv2
 import torch
 import torchvision.transforms.functional as TF
 from torchvision.datasets import MNIST
 from tqdm import tqdm
-
-from src.utils.utils import create_video_from_frames
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -120,6 +117,9 @@ class MovingMNIST:
         seq_index = 0
 
         if hf_videofolder_format:
+            import cv2
+            from src.utils.utils import create_video_from_frames
+
             number_of_videos_digits = len(str(num_videos)) + 1
 
             metadata_path = os.path.join(directory, 'metadata.jsonl')
