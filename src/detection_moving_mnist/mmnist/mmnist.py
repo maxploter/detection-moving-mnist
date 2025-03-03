@@ -118,7 +118,7 @@ class MovingMNIST:
 
         if hf_videofolder_format:
             import cv2
-            from src.utils.utils import create_video_from_frames
+            from src.detection_moving_mnist.utils.utils import create_video_from_frames
 
             number_of_videos_digits = len(str(num_videos)) + 1
 

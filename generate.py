@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import numpy as np
 import torch
 
-from src.mmnist.mmnist import MovingMNIST
-from src.mmnist.trajectory import (
+from src.detection_moving_mnist.mmnist.mmnist import MovingMNIST
+from src.detection_moving_mnist.mmnist.trajectory import (
     BouncingTrajectory,
     RandomTrajectory,
     SimpleLinearTrajectory,
@@ -16,7 +16,6 @@ from src.mmnist.trajectory import (
 
 TRAIN_SPLIT = 'train'
 TEST_SPLIT = 'test'
-MINI_SPLIT = 'mini'
 DATASET_SPLITS = [TRAIN_SPLIT, TEST_SPLIT]
 
 CONFIGS = {

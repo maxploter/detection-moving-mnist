@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "detection_moving_mnist"
+version = "0.0.0"
+authors = [
+  { name="Max Ploter", email="maksim.ploter@gmail.com" },
+]
+description = "A Moving MNIST dataset generator for object detection tasks."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.urls]
+Homepage = "https://github.com/maxploter/detection-moving-mmnist"
+Issues = "https://github.com/maxploter/detection-moving-mmnist/issues"
