@@ -8,6 +8,14 @@ variations on how digits move are added.
 
 In this dataset, each frame is padded to have a resolution of image size 128x128. Each frame is also provided with annotations for object detection (center point detection).
 
+## Setup repository
+
+```shell
+conda create -n detection_moving_mnist python=3.11
+conda activate detection_moving_mnist
+pip install -r requirements.txt
+```
+
 ## How to generate torch-tensor-format datasets
 
 ```text
