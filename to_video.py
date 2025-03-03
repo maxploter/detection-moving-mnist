@@ -7,7 +7,7 @@ import cv2
 from tqdm import tqdm
 
 from generate import CONFIGS, DATASET_SPLITS
-from src.utils.utils import create_video_from_frames, load_dataset
+from src.detection_moving_mnist.utils import create_video_from_frames, load_dataset
 
 logging.basicConfig(
 	level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
