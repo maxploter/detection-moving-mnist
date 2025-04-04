@@ -50,10 +50,34 @@ class MovingMNIST:
         x = initial_translation[0]
         y = initial_translation[1]
         placed_img = TF.affine(pimg, translate=[x, y], angle=0, scale=1, shear=[0])
-        return placed_img, (x,y), label, mnist_idx
+
+        nonzero_mask = img > 0
+
+        # Get indices of non-zero pixels (channel, y, x)
+        nonzero_indices = nonzero_mask.nonzero()
+        y_coords = nonzero_indices[:, 1]
+        x_coords = nonzero_indices[:, 2]
+
+        # Find min and max coordinates
+        min_x = x_coords.min().item()
+        max_x = x_coords.max().item()
+        min_y = y_coords.min().item()
+        max_y = y_coords.max().item()
+
+        # Calculate width and height
+        width = max_x - min_x + 1
+        height = max_y - min_y + 1
+
+        # Convert to center-relative coordinates (center is at (14,14))
+        x_min = min_x - 14
+        y_min = min_y - 14
+
+        digit_bbox = (x_min, y_min, width, height)  # (x_min, y_min, w, h) center is at mnist digit center
+
+        return placed_img, (x,y), label, mnist_idx, digit_bbox
 
     def _one_moving_digit(self, initial_translation):
-        digit, initial_position, label, mnist_idx = self.random_digit(initial_translation)
+        digit, initial_position, label, mnist_idx, mnist_digit_bbox = self.random_digit(initial_translation)
         traj = self.trajectory(
             label,
             self.affine_params,
@@ -62,23 +86,36 @@ class MovingMNIST:
             initial_position=initial_position,
         )
         frames, positions = traj(digit)
-        return torch.stack(frames), positions, label, mnist_idx
+
+        digit_bboxes = [mnist_digit_bbox] * self.num_frames
+
+        return torch.stack(frames), positions, label, digit_bboxes, mnist_idx
 
     def __getitem__(self, i):
         digits = random.choice(self.num_digits)
         initial_digit_translations_overlap_free = translate_digits_overlap_free(self.canvas_width, self.canvas_height, digits)
 
-        moving_digits, positions, all_labels, mnist_indices = zip(
+        moving_digits, positions, all_labels, digit_bboxes, mnist_indices = zip(
             *(self._one_moving_digit(initial_digit_translations_overlap_free[i]) for i in range(digits))
         )
         moving_digits = torch.stack(moving_digits)
         combined_digits = moving_digits.max(dim=0)[0]
 
-        top_boundary = math.ceil(self.canvas_height / 2) - 1
-        bottom_boundary = -self.canvas_height // 2
+        # Coordinate system
+        #            (top)
+        #              -
+        #              |
+        #              |
+        # (left) - ----0---- + (right) X
+        #              |
+        #              |
+        #              + Y
+        #           (bottom)
+        top_boundary = -self.canvas_height // 2
+        bottom_boundary = math.ceil(self.canvas_height / 2) - 1
 
-        right_boundary = math.ceil(self.canvas_width / 2) - 1
         left_boundary = -self.canvas_width // 2
+        right_boundary = math.ceil(self.canvas_width / 2) - 1
 
         targets = []
         for frame_number in range(self.num_frames):
@@ -86,18 +123,56 @@ class MovingMNIST:
 
             labels = []
             center_points = []
+            bboxes_coco_format = [] # x_min, y_min, w, h
+            bboxes_keypoints_coco_format = [] # x, y, visibility
+            bboxes_labels = []
 
-            for digit_center_points, label in zip(positions, all_labels):
+            for digit_center_points, label, digit_bbox in zip(positions, all_labels, digit_bboxes):
                 cx, cy = digit_center_points[frame_number]
 
-                if top_boundary >= cx >= bottom_boundary and right_boundary >= cy >= left_boundary:
-                    labels.append(label)
-                    center_points.append((cx,cy))
+                x_min_mnist_center, y_min_mnist_center, bw, bh = digit_bbox[frame_number] # in mnist digit center coordinates
+
+                x_min = cx + x_min_mnist_center
+                y_min = cy + y_min_mnist_center
+
+                x_max = x_min + bw
+                y_max = y_min + bh
+
+                # Check if the bounding box is within the canvas boundaries
+                if x_max > left_boundary and x_min < right_boundary and y_max > top_boundary and y_min < bottom_boundary:
+                    # Adjust the bounding box to fit within the canvas
+                    x_min = max(x_min, left_boundary)
+                    y_min = max(y_min, top_boundary)
+                    x_max = min(x_max, right_boundary)
+                    y_max = min(y_max, bottom_boundary)
+
+                    # Convert coordinate system from center to top-left corner
+                    x_min_tl = x_min + self.canvas_width // 2
+                    y_min_tl = y_min + self.canvas_height // 2
+                    width = x_max - x_min
+                    height = y_max - y_min
+
+                    bboxes_labels.append(label)
+                    bboxes_coco_format.append(
+                        (x_min_tl, y_min_tl, width, height))  # (x_min, y_min, width, height) in top-left coords
+
+                    if left_boundary <= cx <= right_boundary and top_boundary <= cy <= bottom_boundary:
+                        labels.append(label)
+                        center_points.append((cx, cy))
+                        # Convert center point to top-left coordinate system
+                        cx_tl = cx + self.canvas_width // 2
+                        cy_tl = cy + self.canvas_height // 2
+                        bboxes_keypoints_coco_format.append((cx_tl, cy_tl, 2))  # 2 means visible
+                    else:
+                        bboxes_keypoints_coco_format.append((0, 0, 0))  # 0 means not labeled not visible
 
             target['labels'] = labels
             target['center_points'] = center_points
-            targets.append(target)
+            target['bboxes'] = bboxes_coco_format
+            target['bboxes_labels'] = bboxes_labels
+            target['bboxes_keypoints'] = bboxes_keypoints_coco_format
 
+            targets.append(target)
         return (
             (
                 combined_digits
@@ -184,8 +259,10 @@ class MovingMNIST:
             features = Features({
                 "video": Array3D(shape=(self.num_frames, 128, 128), dtype="uint8"),
                 "labels": Sequence(Sequence(Value("uint8"))),
-                # change format from float to int
                 "center_points": Sequence(Sequence(Sequence(Value("int16")))),
+                "bboxes": Sequence(Sequence(Sequence(Value("int16")))),
+                "bboxes_keypoints": Sequence(Sequence(Sequence(Value("int16")))),
+                "bboxes_labels": Sequence(Sequence(Value("uint8"))),
             })
 
             def video_generator():
@@ -200,10 +277,16 @@ class MovingMNIST:
                     # Extract labels and center points
                     labels = [t['labels'] for t in targets]
                     center_points = [t['center_points'] for t in targets]
+                    bboxes = [t['bboxes'] for t in targets]
+                    bboxes_labels = [t['bboxes_labels'] for t in targets]
+                    bboxes_keypoints = [t['bboxes_keypoints'] for t in targets]
                     yield {
                         "video": frames_np,
                         "labels": labels,
                         "center_points": center_points,
+                        "bboxes": bboxes,
+                        "bboxes_labels": bboxes_labels,
+                        "bboxes_keypoints": bboxes_keypoints,
                     }
                     mnist_indices_used.update(mnist_indices)
                     seq_index += 1
