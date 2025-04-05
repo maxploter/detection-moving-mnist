@@ -41,3 +41,4 @@ ipython_config.py
 .DS_Store
 .idea/
 data/
+mmnist-dataset/
