@@ -2,6 +2,7 @@
 
 ![Detection Moving MNIST Dataset (Easy) annotated video 0](./annotated_video_0.gif)
 ![Detection Moving MNIST Dataset (Easy) annotated video 1](./annotated_video_1.gif)
+![Detection Moving MNIST Dataset (Easy) annotated video 2](./annotated_video_2.gif)
 
 This dataset extends the [original Moving MNIST dataset](https://www.cs.toronto.edu/~nitish/unsupervised_video/). A few
 variations on how digits move are added.
