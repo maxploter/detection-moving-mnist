@@ -27,6 +27,7 @@ class MovingMNIST:
         ),  # random choice in the tuple to set number of moving digits
         num_frames=10,  # number of frames to generate
         concat=True,  # if we concat the final results (frames, 1, 28, 28) or a list of frames
+        initial_digits_overlap_free=True,  # if we want to place digits overlap free
     ):
         self.train = train
         self.mnist = MNIST(path, download=True, train=train)
@@ -39,6 +40,7 @@ class MovingMNIST:
         self.canvas_height = 128
         self.padding = get_padding(128, 128, 28, 28)  # MNIST images are 28x28
         self.concat = concat
+        self.initial_digits_overlap_free = initial_digits_overlap_free
 
     def random_digit(self, initial_translation):
         """Get a random MNIST digit randomly placed on the canvas"""
@@ -93,7 +95,7 @@ class MovingMNIST:
 
     def __getitem__(self, i):
         digits = random.choice(self.num_digits)
-        initial_digit_translations_overlap_free = translate_digits_overlap_free(self.canvas_width, self.canvas_height, digits)
+        initial_digit_translations_overlap_free = translate_digits_overlap_free(self.canvas_width, self.canvas_height, digits) if self.initial_digits_overlap_free else translate_digits_randomly(self.canvas_width, self.canvas_height, digits)
 
         moving_digits, positions, all_labels, digit_bboxes, mnist_indices = zip(
             *(self._one_moving_digit(initial_digit_translations_overlap_free[i]) for i in range(digits))
@@ -424,3 +426,12 @@ def translate_digits_overlap_free(canvas_width, canvas_height, num_objects, digi
         tx, ty = canvas_width//2 - cx, canvas_height//2 - cy
         placed_position_translations.append((tx, ty))
     return placed_position_translations
+
+def translate_digits_randomly(canvas_width, canvas_height, num_objects, digit_size=28):
+    placed_positions = []
+    for _ in range(num_objects):
+        # Randomly generate a position
+        x = random.randint(0, canvas_width - digit_size)
+        y = random.randint(0, canvas_height - digit_size)
+        placed_positions.append((x, y))
+    return placed_positions
