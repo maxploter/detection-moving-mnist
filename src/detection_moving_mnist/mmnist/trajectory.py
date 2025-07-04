@@ -218,3 +218,69 @@ class RandomTrajectory(BaseTrajectory):
         )
 
         return img, transformation_caption
+
+
+class NonLinearTrajectory(BaseTrajectory):
+    def __init__(
+        self,
+        digit_label,
+        affine_params,
+        n,
+        padding,
+        initial_position,
+        first_appearance_frame=0,
+        path_type="sine",
+        amplitude=10,
+        frequency=0.1,
+        **kwargs
+    ):
+        super().__init__(digit_label, affine_params, n, padding, initial_position, **kwargs)
+        self.first_appearance_frame = first_appearance_frame
+        self.path_type = path_type
+        self.amplitude = amplitude
+        self.frequency = frequency
+        self.t = 0  # Time parameter for trajectory
+
+    def transform(self, img, position):
+        import math
+
+        # For frames before appearance, keep position off-screen
+        if self.t < self.first_appearance_frame:
+            self.t += 1
+            # Return off-screen position
+            return img, (-1000, -1000)
+
+        # Base movement
+        base_x = position[0] + self.translate[0]
+        base_y = position[1] + self.translate[1]
+
+        # Apply non-linear component
+        if self.path_type == "sine":
+            offset_y = self.amplitude * math.sin(self.frequency * self.t)
+            new_position = (base_x, base_y + offset_y)
+        elif self.path_type == "circle":
+            offset_x = self.amplitude * math.cos(self.frequency * self.t)
+            offset_y = self.amplitude * math.sin(self.frequency * self.t)
+            new_position = (base_x + offset_x, base_y + offset_y)
+        elif self.path_type == "spiral":
+            growing_amplitude = self.amplitude * (1 + 0.05 * self.t)
+            offset_x = growing_amplitude * math.cos(self.frequency * self.t)
+            offset_y = growing_amplitude * math.sin(self.frequency * self.t)
+            new_position = (base_x + offset_x, base_y + offset_y)
+        else:
+            new_position = (base_x, base_y)
+
+        # Calculate relative translation for this frame
+        relative_translation = [new_position[0] - position[0], new_position[1] - position[1]]
+
+        img = TF.affine(
+            img,
+            angle=self.angle,
+            translate=relative_translation,
+            scale=self.scale,
+            shear=self.shear,
+            **self.kwargs,
+        )
+
+        self.t += 1
+        return img, new_position

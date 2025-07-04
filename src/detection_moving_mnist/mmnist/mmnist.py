@@ -9,6 +9,8 @@ import torchvision.transforms.functional as TF
 from torchvision.datasets import MNIST
 from tqdm import tqdm
 
+from src.detection_moving_mnist.mmnist.trajectory import NonLinearTrajectory
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
@@ -28,6 +30,8 @@ class MovingMNIST:
         num_frames=10,  # number of frames to generate
         concat=True,  # if we concat the final results (frames, 1, 28, 28) or a list of frames
         initial_digits_overlap_free=True,  # if we want to place digits overlap free
+        enable_ranks=True,
+        enable_delayed_appearance=True,
     ):
         self.train = train
         self.mnist = MNIST(path, download=True, train=train)
@@ -41,6 +45,8 @@ class MovingMNIST:
         self.padding = get_padding(128, 128, 28, 28)  # MNIST images are 28x28
         self.concat = concat
         self.initial_digits_overlap_free = initial_digits_overlap_free
+        self.enable_ranks = enable_ranks
+        self.enable_delayed_appearance = enable_delayed_appearance
 
     def random_digit(self, initial_translation):
         """Get a random MNIST digit randomly placed on the canvas"""
@@ -78,30 +84,103 @@ class MovingMNIST:
 
         return placed_img, (x,y), label, mnist_idx, digit_bbox
 
-    def _one_moving_digit(self, initial_translation):
+    def _one_moving_digit(self, initial_translation, appearance_frame=0, rank=0, nonlinear_params=None):
         digit, initial_position, label, mnist_idx, mnist_digit_bbox = self.random_digit(initial_translation)
-        traj = self.trajectory(
-            label,
-            self.affine_params,
-            n=self.num_frames - 1,
-            padding=self.padding,
-            initial_position=initial_position,
-        )
-        frames, positions = traj(digit)
 
+        if isinstance(self.trajectory, type) and issubclass(self.trajectory, NonLinearTrajectory):
+            params = nonlinear_params or {}
+            traj = self.trajectory(
+                label,
+                self.affine_params,
+                n=self.num_frames - 1,
+                padding=self.padding,
+                initial_position=initial_position,
+                first_appearance_frame=appearance_frame,
+                **params
+            )
+        else:
+            traj = self.trajectory(
+                label,
+                self.affine_params,
+                n=self.num_frames - 1,
+                padding=self.padding,
+                initial_position=initial_position,
+            )
+
+        frames, positions = traj(digit)
         digit_bboxes = [mnist_digit_bbox] * self.num_frames
 
-        return torch.stack(frames), positions, label, digit_bboxes, mnist_idx
+        return torch.stack(frames), positions, label, digit_bboxes, mnist_idx, rank
 
     def __getitem__(self, i):
         digits = random.choice(self.num_digits)
         initial_digit_translations = translate_digits_overlap_free(self.canvas_width, self.canvas_height, digits) if self.initial_digits_overlap_free else translate_digits_randomly(self.canvas_width, self.canvas_height, digits)
 
-        moving_digits, positions, all_labels, digit_bboxes, mnist_indices = zip(
+        appearance_frames = []
+        ranks = []
+        nonlinear_params_list = []
+
+        for _ in range(digits):
+            # Randomly determine when digit appears
+            if self.enable_delayed_appearance:
+                appearance_frame = random.randint(0, self.num_frames // 2)
+            else:
+                appearance_frame = 0
+
+            # Assign a rank (depth) to this digit
+            rank = random.randint(0, 9)  # Higher rank means lower in stack
+
+            # Create nonlinear parameters
+            nonlinear_params = {
+                "path_type": random.choice(["sine", "circle", "spiral"]),
+                "amplitude": random.uniform(5, 20),
+                "frequency": random.uniform(0.05, 0.5)
+            }
+
+            appearance_frames.append(appearance_frame)
+            ranks.append(rank)
+            nonlinear_params_list.append(nonlinear_params)
+
+        moving_digits, positions, all_labels, digit_bboxes, mnist_indices, all_ranks = zip(
             *(self._one_moving_digit(initial_digit_translations[i]) for i in range(digits))
         )
         moving_digits = torch.stack(moving_digits)
-        combined_digits = moving_digits.max(dim=0)[0]
+
+        # Apply ranking system when combining digits
+        if self.enable_ranks:
+            # Sort by rank (lower ranks go on top)
+            # rank_indices = sorted(range(len(all_ranks)), key=lambda i: all_ranks[i], reverse=True)
+            combined_digits = torch.zeros_like(moving_digits[0])
+
+            # Iterate through digits indices in descending order without using all_ranks and ranks (ranks are deprecated!!!!!)
+            for idx in range(digits - 1, -1, -1):
+                digit_frames = moving_digits[idx]
+                # For each frame, check if the digit should be visible
+                for frame_idx in range(self.num_frames):
+                    if frame_idx >= appearance_frames[idx]:  # Only show if frame is after appearance
+                        # Get bbox information
+                        x_min, y_min, width, height = digit_bboxes[idx][frame_idx]
+
+                        # Convert to image coordinates
+                        cx, cy = positions[idx][frame_idx]
+                        x_min_img = cx + x_min + self.canvas_width // 2
+                        y_min_img = cy + y_min + self.canvas_height // 2
+
+                        # Ensure coordinates are within image bounds
+                        x_min_img = max(0, math.floor(x_min_img))
+                        y_min_img = max(0, math.floor(y_min_img))
+                        x_max_img = min(self.canvas_width, math.ceil(x_min_img + width))
+                        y_max_img = min(self.canvas_height, math.ceil(y_min_img + height))
+
+                        # Create a bbox-based mask
+                        mask = torch.zeros_like(digit_frames[frame_idx], dtype=torch.bool)
+                        mask[:, y_min_img:y_max_img, x_min_img:x_max_img] = True
+
+                        # Apply the mask to overlay digits
+                        combined_digits[frame_idx][mask] = digit_frames[frame_idx][mask]
+        else:
+            # Original max-based combination
+            combined_digits = moving_digits.max(dim=0)[0]
 
         # Coordinate system
         #            (top)
@@ -129,7 +208,10 @@ class MovingMNIST:
             bboxes_keypoints_coco_format = [] # x, y, visibility
             bboxes_labels = []
 
-            for digit_center_points, label, digit_bbox in zip(positions, all_labels, digit_bboxes):
+            for digit_center_points, label, digit_bbox, appearance_frame in zip(positions, all_labels, digit_bboxes, appearance_frames):
+                if frame_number < appearance_frame:
+                    continue
+
                 cx, cy = digit_center_points[frame_number]
 
                 x_min_mnist_center, y_min_mnist_center, bw, bh = digit_bbox[frame_number] # in mnist digit center coordinates
@@ -261,9 +343,9 @@ class MovingMNIST:
             features = Features({
                 "video": Array3D(shape=(self.num_frames, 128, 128), dtype="uint8"),
                 "labels": Sequence(Sequence(Value("uint8"))),
-                "center_points": Sequence(Sequence(Sequence(Value("int16")))),
-                "bboxes": Sequence(Sequence(Sequence(Value("int16")))),
-                "bboxes_keypoints": Sequence(Sequence(Sequence(Value("int16")))),
+                "center_points": Sequence(Sequence(Sequence(Value("float32")))),
+                "bboxes": Sequence(Sequence(Sequence(Value("float32")))),
+                "bboxes_keypoints": Sequence(Sequence(Sequence(Value("float32")))),
                 "bboxes_labels": Sequence(Sequence(Value("uint8"))),
             })
 
@@ -271,7 +353,11 @@ class MovingMNIST:
                 nonlocal mnist_indices_used, seq_index
                 # Generate initial num_videos
                 for _ in range(num_videos):
-                    frames, targets, mnist_indices = self[0]
+                    try:
+                        frames, targets, mnist_indices = self[0]
+                    except Exception as e:
+                        logging.error(f"Error generating video sequence: {e}")
+                        raise e
 
                     # Convert directly to uint8 and remove channel dimension
                     frames_np = (frames.detach().numpy() * 255).astype(np.uint8)
