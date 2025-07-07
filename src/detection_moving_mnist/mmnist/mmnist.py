@@ -29,7 +29,7 @@ class MovingMNIST:
         ),  # random choice in the tuple to set number of moving digits
         num_frames=10,  # number of frames to generate
         concat=True,  # if we concat the final results (frames, 1, 28, 28) or a list of frames
-        initial_digits_overlap_free=True,  # if we want to place digits overlap free
+        initial_digits_overlap_free=False,  # if we want to place digits overlap free
         enable_ranks=True,
         enable_delayed_appearance=True,
     ):
@@ -120,10 +120,11 @@ class MovingMNIST:
 
     def __getitem__(self, i):
         digits = random.choice(self.num_digits)
-        initial_digit_translations = translate_digits_overlap_free(self.canvas_width, self.canvas_height, digits) if self.initial_digits_overlap_free else translate_digits_randomly(self.canvas_width, self.canvas_height, digits)
+        initial_digit_translations = translate_digits_overlap_free(self.canvas_width, self.canvas_height,
+                                                                   digits) if self.initial_digits_overlap_free else translate_digits_randomly(
+            self.canvas_width, self.canvas_height, digits, canvas_multiplier=1.5)
 
         appearance_frames = []
-        ranks = []
         nonlinear_params_list = []
 
         for _ in range(digits):
@@ -133,24 +134,19 @@ class MovingMNIST:
             else:
                 appearance_frame = 0
 
-            # Assign a rank (depth) to this digit
-            rank = random.randint(0, 9)  # Higher rank means lower in stack
-
             # Create nonlinear parameters
             nonlinear_params = {
                 "path_type": random.choice(["sine", "circle", "spiral"]),
-                "amplitude": random.uniform(5, 20),
-                "frequency": random.uniform(0.05, 0.5)
+                "amplitude": random.uniform(1, 10),
+                "frequency": random.uniform(0.05, 0.25)
             }
 
             appearance_frames.append(appearance_frame)
-            ranks.append(rank)
             nonlinear_params_list.append(nonlinear_params)
 
         moving_digits, positions, all_labels, digit_bboxes, mnist_indices = zip(
-            *(self._one_moving_digit(initial_digit_translations[i]) for i in range(digits))
+            *(self._one_moving_digit(initial_digit_translations[i], appearance_frame=appearance_frames[i], nonlinear_params=nonlinear_params_list[i]) for i in range(digits))
         )
-        # moving_digits = torch.stack(moving_digits)
 
         # Initialize frame tensor
         combined_digits = torch.zeros((self.num_frames, 1, self.canvas_width, self.canvas_height))
@@ -170,10 +166,6 @@ class MovingMNIST:
                         continue
 
                     x, y = coordinates[frame_idx]
-
-                    # Skip if digit is off-screen
-                    if x <= -1000 or y <= -1000:
-                        continue
 
                     # Create empty canvas for this digit
                     digit_canvas = torch.zeros((1, self.canvas_width, self.canvas_height))
@@ -288,9 +280,6 @@ class MovingMNIST:
                 cx, cy = digit_center_points[frame_number]
 
                 x_min, y_min, bw, bh = digit_bbox[frame_number] # in mnist digit center coordinates
-
-                # x_min = cx + x_min_mnist_center
-                # y_min = cy + y_min_mnist_center
 
                 x_max = x_min + bw
                 y_max = y_min + bh
@@ -586,12 +575,12 @@ def translate_digits_overlap_free(canvas_width, canvas_height, num_objects, digi
         placed_position_translations.append((tx, ty))
     return placed_position_translations
 
-def translate_digits_randomly(canvas_width, canvas_height, num_objects, digit_size=28):
+def translate_digits_randomly(canvas_width, canvas_height, num_objects, digit_size=28, canvas_multiplier=1.0):
     placed_positions = []
     for _ in range(num_objects):
         # Randomly generate a position
-        x = random.randint(0, canvas_width - digit_size)
-        y = random.randint(0, canvas_height - digit_size)
+        x = random.randint(0, canvas_width*canvas_multiplier - digit_size//2)
+        y = random.randint(0, canvas_height*canvas_multiplier - digit_size//2)
         placed_positions.append((x, y))
 
     placed_position_translations = []

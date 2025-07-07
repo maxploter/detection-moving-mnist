@@ -88,6 +88,11 @@ def parse_args():
         action='store_true',
         help="Enable delayed appearance of digits in the dataset. This means digits will not appear at the beginning of the video."
     )
+    parser.add_argument(
+        "--initial_digits_overlap_free",
+        action='store_true',
+        help="Ensure that the initial digits are placed without overlap in the first frame."
+    )
 
     args = parser.parse_args()
 
@@ -130,6 +135,7 @@ def main(args):
         num_frames=num_frames_per_video,
         enable_ranks=args.enable_ranks,
         enable_delayed_appearance=args.enable_delayed_appearance,
+        initial_digits_overlap_free=args.initial_digits_overlap_free,
     )
     dataset.save(
         directory=directory,
