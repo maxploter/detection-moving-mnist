@@ -271,16 +271,16 @@ class NonLinearTrajectory(BaseTrajectory):
             new_position = (base_x, base_y)
 
         # Calculate relative translation for this frame
-        relative_translation = [new_position[0] - position[0], new_position[1] - position[1]]
+        # relative_translation = [new_position[0] - position[0], new_position[1] - position[1]]
 
-        img = TF.affine(
-            img,
-            angle=self.angle,
-            translate=relative_translation,
-            scale=self.scale,
-            shear=self.shear,
-            **self.kwargs,
-        )
+        # img = TF.affine(
+        #     img,
+        #     angle=self.angle,
+        #     translate=relative_translation,
+        #     scale=self.scale,
+        #     shear=self.shear,
+        #     **self.kwargs,
+        # )
 
         self.t += 1
-        return img, new_position
+        return None, new_position

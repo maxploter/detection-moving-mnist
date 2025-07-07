@@ -84,7 +84,8 @@ class MovingMNIST:
 
         return placed_img, (x,y), label, mnist_idx, digit_bbox
 
-    def _one_moving_digit(self, initial_translation, appearance_frame=0, rank=0, nonlinear_params=None):
+    def _one_moving_digit(self, initial_translation, appearance_frame=0, nonlinear_params=None):
+        # Get the original digit and its properties
         digit, initial_position, label, mnist_idx, mnist_digit_bbox = self.random_digit(initial_translation)
 
         if isinstance(self.trajectory, type) and issubclass(self.trajectory, NonLinearTrajectory):
@@ -110,7 +111,12 @@ class MovingMNIST:
         frames, positions = traj(digit)
         digit_bboxes = [mnist_digit_bbox] * self.num_frames
 
-        return torch.stack(frames), positions, label, digit_bboxes, mnist_idx, rank
+        if None in frames:
+            frames = None
+        else:
+            frames = torch.stack(frames)
+
+        return frames, positions, label, digit_bboxes, mnist_idx
 
     def __getitem__(self, i):
         digits = random.choice(self.num_digits)
@@ -141,43 +147,110 @@ class MovingMNIST:
             ranks.append(rank)
             nonlinear_params_list.append(nonlinear_params)
 
-        moving_digits, positions, all_labels, digit_bboxes, mnist_indices, all_ranks = zip(
+        moving_digits, positions, all_labels, digit_bboxes, mnist_indices = zip(
             *(self._one_moving_digit(initial_digit_translations[i]) for i in range(digits))
         )
-        moving_digits = torch.stack(moving_digits)
+        # moving_digits = torch.stack(moving_digits)
+
+        # Initialize frame tensor
+        combined_digits = torch.zeros((self.num_frames, 1, self.canvas_width, self.canvas_height))
+        accumulated_masks = torch.zeros((self.num_frames, 1, self.canvas_width, self.canvas_height), dtype=torch.bool)
 
         # Apply ranking system when combining digits
         if self.enable_ranks:
-            # Sort by rank (lower ranks go on top)
-            # rank_indices = sorted(range(len(all_ranks)), key=lambda i: all_ranks[i], reverse=True)
-            combined_digits = torch.zeros_like(moving_digits[0])
-
-            # Iterate through digits indices in descending order without using all_ranks and ranks (ranks are deprecated!!!!!)
             for idx in range(digits - 1, -1, -1):
-                digit_frames = moving_digits[idx]
-                # For each frame, check if the digit should be visible
+                mnist_idx = mnist_indices[idx]
+                original_digit, label = self.mnist[mnist_idx]
+                # Convert PIL Image to tensor
+                original_digit = TF.to_tensor(original_digit)
+                coordinates = positions[idx]
+
                 for frame_idx in range(self.num_frames):
-                    if frame_idx >= appearance_frames[idx]:  # Only show if frame is after appearance
-                        # Get bbox information
-                        x_min, y_min, width, height = digit_bboxes[idx][frame_idx]
+                    if frame_idx < appearance_frames[idx]:
+                        continue
 
-                        # Convert to image coordinates
-                        cx, cy = positions[idx][frame_idx]
-                        x_min_img = cx + x_min + self.canvas_width // 2
-                        y_min_img = cy + y_min + self.canvas_height // 2
+                    x, y = coordinates[frame_idx]
 
-                        # Ensure coordinates are within image bounds
-                        x_min_img = max(0, math.floor(x_min_img))
-                        y_min_img = max(0, math.floor(y_min_img))
-                        x_max_img = min(self.canvas_width, math.ceil(x_min_img + width))
-                        y_max_img = min(self.canvas_height, math.ceil(y_min_img + height))
+                    # Skip if digit is off-screen
+                    if x <= -1000 or y <= -1000:
+                        continue
 
-                        # Create a bbox-based mask
-                        mask = torch.zeros_like(digit_frames[frame_idx], dtype=torch.bool)
-                        mask[:, y_min_img:y_max_img, x_min_img:x_max_img] = True
+                    # Create empty canvas for this digit
+                    digit_canvas = torch.zeros((1, self.canvas_width, self.canvas_height))
 
-                        # Apply the mask to overlay digits
-                        combined_digits[frame_idx][mask] = digit_frames[frame_idx][mask]
+                    # Place the digit in the center of a temporary canvas
+                    temp_canvas = torch.zeros_like(digit_canvas)
+                    center_y = self.canvas_width // 2 - 14  # 14 is half of MNIST digit width (28/2)
+                    center_x = self.canvas_height // 2 - 14  # 14 is half of MNIST digit height
+                    temp_canvas[:, center_x:center_x + 28, center_y:center_y + 28] = original_digit
+
+                    # Use affine transformation to move the digit to the correct position
+                    digit_canvas = TF.affine(
+                        temp_canvas,
+                        angle=0,
+                        translate=[x, y],  # x, y are already relative to center
+                        scale=1.0,
+                        shear=0.0,
+                        fill=0
+                    )
+
+                    # Create mask for this digit
+                    digit_mask = torch.zeros_like(digit_canvas, dtype=torch.bool)
+                    x_min, y_min, width, height = digit_bboxes[idx][frame_idx]
+                    if width > 0 and height > 0:  # Only create mask for valid bounding boxes
+                        # Convert from center-relative to absolute coordinates
+                        x_min_abs = int(x + x_min + self.canvas_width // 2)
+                        y_min_abs = int(y + y_min + self.canvas_height // 2)
+
+                        # Create rectangular mask covering the whole bounding box
+                        x_max_abs = x_min_abs + width
+                        y_max_abs = y_min_abs + height
+
+                        # Ensure coordinates are within canvas boundaries
+                        x_min_abs = max(0, x_min_abs)
+                        y_min_abs = max(0, y_min_abs)
+                        x_max_abs = min(x_max_abs, self.canvas_width)
+                        y_max_abs = min(y_max_abs, self.canvas_height)
+
+                        if x_min_abs < self.canvas_width and y_min_abs < self.canvas_height and x_max_abs > 0 and y_max_abs > 0:
+                            digit_mask[:, y_min_abs:y_max_abs, x_min_abs:x_max_abs] = True
+
+                    # Only place digit where accumulated mask is False (no digit yet)
+                    placement_mask = digit_mask & ~accumulated_masks[frame_idx]
+
+                    # Place the digit and update the accumulated mask
+                    combined_digits[frame_idx][placement_mask] = digit_canvas[placement_mask]
+                    accumulated_masks[frame_idx] |= digit_mask
+
+                    # Find the visible pixels for this digit after masking
+                    digit_canvas_after_overlap = torch.zeros_like(digit_canvas)
+                    digit_canvas_after_overlap[placement_mask] = digit_canvas[placement_mask]
+                    visible_pixels = digit_canvas_after_overlap.nonzero()
+
+                    if visible_pixels.size(0) > 0:  # Check if there are any visible pixels
+                        # Get y, x coordinates of visible pixels
+                        y_coords = visible_pixels[:, 1]
+                        x_coords = visible_pixels[:, 2]
+
+                        # Find bounding box of visible pixels
+                        min_x = x_coords.min().item()
+                        max_x = x_coords.max().item()
+                        min_y = y_coords.min().item()
+                        max_y = y_coords.max().item()
+
+                        # Calculate width and height
+                        width = max_x - min_x + 1
+                        height = max_y - min_y + 1
+
+                        # Convert to digit center coordinates
+                        x_min_center = min_x - self.canvas_width // 2
+                        y_min_center = min_y - self.canvas_height // 2
+
+                        # Store updated bounding box
+                        digit_bboxes[idx][frame_idx] = (x_min_center, y_min_center, width, height)
+                    else:
+                        # No visible pixels, set empty bbox
+                        digit_bboxes[idx][frame_idx] = (-1000, -1000, 0, 0)
         else:
             # Original max-based combination
             combined_digits = moving_digits.max(dim=0)[0]
@@ -214,10 +287,10 @@ class MovingMNIST:
 
                 cx, cy = digit_center_points[frame_number]
 
-                x_min_mnist_center, y_min_mnist_center, bw, bh = digit_bbox[frame_number] # in mnist digit center coordinates
+                x_min, y_min, bw, bh = digit_bbox[frame_number] # in mnist digit center coordinates
 
-                x_min = cx + x_min_mnist_center
-                y_min = cy + y_min_mnist_center
+                # x_min = cx + x_min_mnist_center
+                # y_min = cy + y_min_mnist_center
 
                 x_max = x_min + bw
                 y_max = y_min + bh
