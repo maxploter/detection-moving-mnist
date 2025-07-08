@@ -292,6 +292,7 @@ class NonLinearTrajectory(BaseTrajectory):
         path_type="sine",
         amplitude=10,
         frequency=0.1,
+        poly_coeffs=None,
         **kwargs
     ):
         super().__init__(
@@ -301,22 +302,25 @@ class NonLinearTrajectory(BaseTrajectory):
             canvas_width,
             canvas_height,
             **kwargs)
-        self.first_appearance_frame = first_appearance_frame
         self.path_type = path_type
         self.amplitude = amplitude
         self.frequency = frequency
         self.t = 0  # Time parameter for trajectory
 
-    def transform(self, img, position):
+        # Default to quadratic motion if no coefficients provided
+        self.poly_coeffs_x = poly_coeffs['x'] or [0, 1, 0]  # x(t) = t (linear in x)
+        self.poly_coeffs_y = poly_coeffs['y'] or [0, 0, 1]  # y(t) = t² (quadratic in y)
+        self.poly_scale = poly_coeffs.get('scale', 1)
 
+    def transform(self, img, position):
         # Base movement
-        base_x = position[0] #+ self.translate[0]
-        base_y = position[1] #+ self.translate[1]
+        base_x = position[0]
+        base_y = position[1]
 
         # Apply non-linear component
         if self.path_type == "sine":
             offset_y = self.amplitude * math.sin(self.frequency * self.t)
-            new_position = (base_x, base_y + offset_y)
+            new_position = (base_x + self.translate[0], base_y + offset_y)
         elif self.path_type == "circle":
             offset_x = self.amplitude * math.cos(self.frequency * self.t)
             offset_y = self.amplitude * math.sin(self.frequency * self.t)
@@ -326,6 +330,16 @@ class NonLinearTrajectory(BaseTrajectory):
             offset_x = growing_amplitude * math.cos(self.frequency * self.t)
             offset_y = growing_amplitude * math.sin(self.frequency * self.t)
             new_position = (base_x + offset_x, base_y + offset_y)
+        elif self.path_type == "polynomial":
+            # Calculate polynomial trajectories for both x and y
+            offset_x = sum(coeff * (self.t ** i) for i, coeff in enumerate(self.poly_coeffs_x))
+            offset_y = sum(coeff * (self.t ** i) for i, coeff in enumerate(self.poly_coeffs_y))
+
+            # Apply scaling factor
+            offset_x *= self.poly_scale
+            offset_y *= self.poly_scale
+
+            new_position = (base_x + offset_x, base_y + offset_y)
         else:
             new_position = (base_x, base_y)
 
@@ -333,7 +347,7 @@ class NonLinearTrajectory(BaseTrajectory):
         img = TF.affine(
             img,
             angle=self.angle,
-            translate=new_position,  # x, y are already relative to center
+            translate=new_position,
             scale=self.scale,
             shear=self.shear,
             **self.kwargs,

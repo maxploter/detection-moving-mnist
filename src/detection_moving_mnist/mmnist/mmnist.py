@@ -108,11 +108,32 @@ class MovingMNIST:
             else:
                 appearance_frame = 0
 
-            # Create nonlinear parameters
+            def poly_coeffs():
+                linear_axis = random.choice(['x', 'y'])
+
+                # Initialize coefficients
+                x_coeffs = [0, random.uniform(-1.2, 1.2), 0]  # Default to linear for x
+                y_coeffs = [0, random.uniform(-1.2, 1.2), 0]  # Default to linear for y
+
+                # Set quadratic term for the non-linear coordinate
+                if linear_axis == 'x':
+                    # x is linear, y is quadratic
+                    y_coeffs[2] = random.uniform(-0.15, 0.15)
+                else:
+                    # y is linear, x is quadratic
+                    x_coeffs[2] = random.uniform(-0.15, 0.15)
+
+                return {
+                    'x': x_coeffs,
+                    'y': y_coeffs,
+                    'poly_scale': random.uniform(1.0, 1.5),
+                }
+
             nonlinear_params = {
-                "path_type": random.choice(["sine", "circle", "spiral"]),
+                "path_type": random.choice(["polynomial", "sine", "circle", "spiral"]),
                 "amplitude": random.uniform(1, 10),
-                "frequency": random.uniform(0.05, 0.25)
+                "frequency": random.uniform(0.05, 0.25),
+                "poly_coeffs": poly_coeffs(),
             }
 
             appearance_frames.append(appearance_frame)
