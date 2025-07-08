@@ -51,72 +51,46 @@ class MovingMNIST:
     def random_digit(self, initial_translation):
         """Get a random MNIST digit randomly placed on the canvas"""
         mnist_idx = random.randrange(0, self.total_data_num)
-        img, label = self.mnist[mnist_idx]
-        img = TF.to_tensor(img)
-        pimg = TF.pad(img, padding=self.padding)
 
         x = initial_translation[0]
         y = initial_translation[1]
-        placed_img = TF.affine(pimg, translate=[x, y], angle=0, scale=1, shear=[0])
 
-        nonzero_mask = img > 0
-
-        # Get indices of non-zero pixels (channel, y, x)
-        nonzero_indices = nonzero_mask.nonzero()
-        y_coords = nonzero_indices[:, 1]
-        x_coords = nonzero_indices[:, 2]
-
-        # Find min and max coordinates
-        min_x = x_coords.min().item()
-        max_x = x_coords.max().item()
-        min_y = y_coords.min().item()
-        max_y = y_coords.max().item()
-
-        # Calculate width and height
-        width = max_x - min_x + 1
-        height = max_y - min_y + 1
-
-        # Convert to center-relative coordinates (center is at (14,14))
-        x_min = min_x - 14
-        y_min = min_y - 14
-
-        digit_bbox = (x_min, y_min, width, height)  # (x_min, y_min, w, h) center is at mnist digit center
-
-        return placed_img, (x,y), label, mnist_idx, digit_bbox
+        return (x,y), mnist_idx
 
     def _one_moving_digit(self, initial_translation, appearance_frame=0, nonlinear_params=None):
         # Get the original digit and its properties
-        digit, initial_position, label, mnist_idx, mnist_digit_bbox = self.random_digit(initial_translation)
+        initial_position, mnist_idx = self.random_digit(initial_translation)
+
+        mnist_img, label = self.mnist[mnist_idx]
+        mnist_img = TF.to_tensor(mnist_img)
 
         if isinstance(self.trajectory, type) and issubclass(self.trajectory, NonLinearTrajectory):
             params = nonlinear_params or {}
             traj = self.trajectory(
                 label,
                 self.affine_params,
-                n=self.num_frames - 1,
+                n=self.num_frames,
                 padding=self.padding,
                 initial_position=initial_position,
                 first_appearance_frame=appearance_frame,
+                mnist_img=mnist_img,
+                canvas_width=self.canvas_width,
+                canvas_height=self.canvas_height,
                 **params
             )
         else:
             traj = self.trajectory(
                 label,
                 self.affine_params,
-                n=self.num_frames - 1,
+                n=self.num_frames,
                 padding=self.padding,
                 initial_position=initial_position,
+                mnist_img=mnist_img,
             )
 
-        frames, positions = traj(digit)
-        digit_bboxes = [mnist_digit_bbox] * self.num_frames
+        trajectory_data = traj()
 
-        if None in frames:
-            frames = None
-        else:
-            frames = torch.stack(frames)
-
-        return frames, positions, label, digit_bboxes, mnist_idx
+        return trajectory_data, label, mnist_idx
 
     def __getitem__(self, i):
         digits = random.choice(self.num_digits)
@@ -144,8 +118,9 @@ class MovingMNIST:
             appearance_frames.append(appearance_frame)
             nonlinear_params_list.append(nonlinear_params)
 
-        moving_digits, positions, all_labels, digit_bboxes, mnist_indices = zip(
-            *(self._one_moving_digit(initial_digit_translations[i], appearance_frame=appearance_frames[i], nonlinear_params=nonlinear_params_list[i]) for i in range(digits))
+        trajectory_data_per_digit, all_labels, mnist_indices = zip(
+            *(self._one_moving_digit(initial_digit_translations[i], appearance_frame=appearance_frames[i],
+                                     nonlinear_params=nonlinear_params_list[i]) for i in range(digits))
         )
 
         # Initialize frame tensor
@@ -153,59 +128,43 @@ class MovingMNIST:
         accumulated_masks = torch.zeros((self.num_frames, 1, self.canvas_width, self.canvas_height), dtype=torch.bool)
 
         # Apply ranking system when combining digits
-        if self.enable_ranks:
+        targets = []
+
+        for frame_idx in range(self.num_frames):
+            target = {}
+
+            labels = []
+            center_points = []
+            bboxes_coco_format = [] # x_min, y_min, w, h
+            bboxes_keypoints_coco_format = [] # x, y, visibility
+            bboxes_labels = []
+            track_ids = []
+
             for idx in range(digits - 1, -1, -1):
                 mnist_idx = mnist_indices[idx]
                 original_digit, label = self.mnist[mnist_idx]
-                # Convert PIL Image to tensor
                 original_digit = TF.to_tensor(original_digit)
-                coordinates = positions[idx]
+                trajectory_data = trajectory_data_per_digit[idx]
 
-                for frame_idx in range(self.num_frames):
-                    if frame_idx < appearance_frames[idx]:
-                        continue
+                if frame_idx not in trajectory_data:
+                    continue
 
-                    x, y = coordinates[frame_idx]
+                x, y = trajectory_data[frame_idx]['center_point']
 
-                    # Create empty canvas for this digit
-                    digit_canvas = torch.zeros((1, self.canvas_width, self.canvas_height))
+                # Create empty canvas for this digit
+                digit_canvas = trajectory_data[frame_idx]['frame']
 
-                    # Place the digit in the center of a temporary canvas
-                    temp_canvas = torch.zeros_like(digit_canvas)
-                    center_y = self.canvas_width // 2 - 14  # 14 is half of MNIST digit width (28/2)
-                    center_x = self.canvas_height // 2 - 14  # 14 is half of MNIST digit height
-                    temp_canvas[:, center_x:center_x + 28, center_y:center_y + 28] = original_digit
+                # Create mask for this digit
+                digit_mask = torch.zeros_like(digit_canvas, dtype=torch.bool)
+                bbox = trajectory_data[frame_idx]['bbox']
+                if bbox is None:
+                    continue
 
-                    # Use affine transformation to move the digit to the correct position
-                    digit_canvas = TF.affine(
-                        temp_canvas,
-                        angle=0,
-                        translate=[x, y],  # x, y are already relative to center
-                        scale=1.0,
-                        shear=0.0,
-                        fill=0
-                    )
+                (x_min, y_min, width, height) = bbox
 
-                    # Create mask for this digit
-                    digit_mask = torch.zeros_like(digit_canvas, dtype=torch.bool)
-                    x_min, y_min, width, height = digit_bboxes[idx][frame_idx]
-                    if width > 0 and height > 0:  # Only create mask for valid bounding boxes
-                        # Convert from center-relative to absolute coordinates
-                        x_min_abs = int(x + x_min + self.canvas_width // 2)
-                        y_min_abs = int(y + y_min + self.canvas_height // 2)
+                if self.enable_ranks:
 
-                        # Create rectangular mask covering the whole bounding box
-                        x_max_abs = x_min_abs + width
-                        y_max_abs = y_min_abs + height
-
-                        # Ensure coordinates are within canvas boundaries
-                        x_min_abs = max(0, x_min_abs)
-                        y_min_abs = max(0, y_min_abs)
-                        x_max_abs = min(x_max_abs, self.canvas_width)
-                        y_max_abs = min(y_max_abs, self.canvas_height)
-
-                        if x_min_abs < self.canvas_width and y_min_abs < self.canvas_height and x_max_abs > 0 and y_max_abs > 0:
-                            digit_mask[:, y_min_abs:y_max_abs, x_min_abs:x_max_abs] = True
+                    digit_mask[:, y_min:y_min+height, x_min:x_min+width] = True
 
                     # Only place digit where accumulated mask is False (no digit yet)
                     placement_mask = digit_mask & ~accumulated_masks[frame_idx]
@@ -234,89 +193,41 @@ class MovingMNIST:
                         width = max_x - min_x + 1
                         height = max_y - min_y + 1
 
-                        # Convert to digit center coordinates
-                        x_min_center = min_x - self.canvas_width // 2
-                        y_min_center = min_y - self.canvas_height // 2
-
                         # Store updated bounding box
-                        digit_bboxes[idx][frame_idx] = (x_min_center, y_min_center, width, height)
+                        trajectory_data[frame_idx]['bbox'] = (min_x, min_y, width, height)
                     else:
                         # No visible pixels, set empty bbox
-                        digit_bboxes[idx][frame_idx] = (-1000, -1000, 0, 0)
-        else:
-            # Original max-based combination
-            combined_digits = moving_digits.max(dim=0)[0]
+                        trajectory_data[frame_idx]['bbox'] = None
+                else:
+                    # Original max-based combination
+                    # combined_digits = moving_digits.max(dim=0)[0]
+                    raise NotImplementedError("Ranking system is not enabled, but it is required for this dataset.")
 
-        # Coordinate system
-        #            (top)
-        #              -
-        #              |
-        #              |
-        # (left) - ----0---- + (right) X
-        #              |
-        #              |
-        #              + Y
-        #           (bottom)
-        top_boundary = -self.canvas_height // 2
-        bottom_boundary = math.ceil(self.canvas_height / 2) - 1
-
-        left_boundary = -self.canvas_width // 2
-        right_boundary = math.ceil(self.canvas_width / 2) - 1
-
-        targets = []
-        for frame_number in range(self.num_frames):
-            target = {}
-
-            labels = []
-            center_points = []
-            bboxes_coco_format = [] # x_min, y_min, w, h
-            bboxes_keypoints_coco_format = [] # x, y, visibility
-            bboxes_labels = []
-
-            for digit_center_points, label, digit_bbox, appearance_frame in zip(positions, all_labels, digit_bboxes, appearance_frames):
-                if frame_number < appearance_frame:
+                if trajectory_data[frame_idx]['bbox'] is None:
                     continue
 
-                cx, cy = digit_center_points[frame_number]
+                labels.append(label)
+                bboxes_labels.append(label)
+                bboxes_coco_format.append(trajectory_data[frame_idx]['bbox'])
+                center_points.append((x, y))
+                track_ids.append(idx)
 
-                x_min, y_min, bw, bh = digit_bbox[frame_number] # in mnist digit center coordinates
+                cx = x + self.canvas_width // 2
+                cy = y + self.canvas_height // 2
 
-                x_max = x_min + bw
-                y_max = y_min + bh
-
-                # Check if the bounding box is within the canvas boundaries
-                if x_max > left_boundary and x_min < right_boundary and y_max > top_boundary and y_min < bottom_boundary:
-                    # Adjust the bounding box to fit within the canvas
-                    x_min = max(x_min, left_boundary)
-                    y_min = max(y_min, top_boundary)
-                    x_max = min(x_max, right_boundary)
-                    y_max = min(y_max, bottom_boundary)
-
-                    # Convert coordinate system from center to top-left corner
-                    x_min_tl = x_min + self.canvas_width // 2
-                    y_min_tl = y_min + self.canvas_height // 2
-                    width = x_max - x_min
-                    height = y_max - y_min
-
-                    bboxes_labels.append(label)
-                    bboxes_coco_format.append(
-                        (x_min_tl, y_min_tl, width, height))  # (x_min, y_min, width, height) in top-left coords
-
-                    if left_boundary <= cx <= right_boundary and top_boundary <= cy <= bottom_boundary:
-                        labels.append(label)
-                        center_points.append((cx, cy))
-                        # Convert center point to top-left coordinate system
-                        cx_tl = cx + self.canvas_width // 2
-                        cy_tl = cy + self.canvas_height // 2
-                        bboxes_keypoints_coco_format.append((cx_tl, cy_tl, 2))  # 2 means visible
-                    else:
-                        bboxes_keypoints_coco_format.append((0, 0, 0))  # 0 means not labeled not visible
+                if cx < 0 or cy < 0 or cx >= self.canvas_width or cy >= self.canvas_height:
+                    # If the center point is outside the canvas, we do not add it
+                    bboxes_keypoints_coco_format.append((0, 0, 0))
+                else:
+                    # Convert center point to top-left coordinate system
+                    bboxes_keypoints_coco_format.append((cx, cy, 2))
 
             target['labels'] = labels
             target['center_points'] = center_points
             target['bboxes'] = bboxes_coco_format
             target['bboxes_labels'] = bboxes_labels
             target['bboxes_keypoints'] = bboxes_keypoints_coco_format
+            target['track_ids'] = track_ids
 
             targets.append(target)
         return (
@@ -409,6 +320,7 @@ class MovingMNIST:
                 "bboxes": Sequence(Sequence(Sequence(Value("float32")))),
                 "bboxes_keypoints": Sequence(Sequence(Sequence(Value("float32")))),
                 "bboxes_labels": Sequence(Sequence(Value("uint8"))),
+                "track_ids": Sequence(Sequence(Value("uint8"))),
             })
 
             def video_generator():
@@ -430,6 +342,7 @@ class MovingMNIST:
                     bboxes = [t['bboxes'] for t in targets]
                     bboxes_labels = [t['bboxes_labels'] for t in targets]
                     bboxes_keypoints = [t['bboxes_keypoints'] for t in targets]
+                    track_ids = [t['track_ids'] for t in targets]
                     yield {
                         "video": frames_np,
                         "labels": labels,
@@ -437,6 +350,7 @@ class MovingMNIST:
                         "bboxes": bboxes,
                         "bboxes_labels": bboxes_labels,
                         "bboxes_keypoints": bboxes_keypoints,
+                        "track_ids": track_ids,
                     }
                     mnist_indices_used.update(mnist_indices)
                     seq_index += 1

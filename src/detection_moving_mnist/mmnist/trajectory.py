@@ -1,11 +1,22 @@
 import random
+import math
 
+import torch
 import torchvision.transforms.functional as TF
 
 
 class BaseTrajectory:
     def __init__(
-        self, digit_label, affine_params, n, padding, initial_position, **kwargs
+        self, digit_label,
+        affine_params,
+        n,
+        padding,
+        initial_position,
+        mnist_img,
+        first_appearance_frame,
+        canvas_width,
+        canvas_height,
+        **kwargs
     ):
         self.digit_label = digit_label
         self.affine_params = affine_params
@@ -13,6 +24,10 @@ class BaseTrajectory:
         self.padding = padding
         self.position = initial_position
         self.kwargs = kwargs
+        self.mnist_img = mnist_img
+        self.first_appearance_frame = first_appearance_frame
+        self.canvas_width = canvas_width
+        self.canvas_height = canvas_height
 
         # Set fixed initial values for the transformation
         self.translate = (
@@ -30,14 +45,56 @@ class BaseTrajectory:
     def transform(self, img, position):
         raise NotImplementedError("This method should be implemented by subclasses.")
 
-    def __call__(self, img):
-        sequence = [img]
-        center_points = [self.position]
-        for _ in range(self.n):
-            img, position = self.transform(sequence[-1], center_points[-1])
-            sequence.append(img)
-            center_points.append(position)
-        return sequence, center_points
+    def __call__(self):
+
+        # Place the digit in the center of a temporary canvas
+        digit_canvas = torch.zeros((1, self.canvas_height, self.canvas_width), dtype=torch.float32)
+        y_digit_min = digit_canvas.size(1) // 2 - self.mnist_img.size(1) // 2
+        x_digit_min = digit_canvas.size(2) // 2 - self.mnist_img.size(2) // 2
+        digit_canvas[:, y_digit_min:y_digit_min + self.mnist_img.size(1),
+        x_digit_min:x_digit_min + self.mnist_img.size(2)] = self.mnist_img
+
+        x = self.position[0]
+        y = self.position[1]
+        placed_img = TF.affine(digit_canvas, translate=[x, y], angle=0, scale=1, shear=[0])
+
+        digit_bbox = self.bbox(placed_img)
+
+        targets = {self.first_appearance_frame: {
+            "frame": placed_img,
+            "center_point": self.position,
+            "bbox": digit_bbox,
+        }}
+
+        for t in range(self.first_appearance_frame+1, self.n):
+            img, position = self.transform(digit_canvas, targets[t-1]['center_point'])
+
+            targets[t] = {
+                "frame": img,
+                "center_point": position,
+                "bbox": self.bbox(img),
+            }
+        return targets
+
+    def bbox(self, img):
+        """
+        Calculate the bounding box of the digit in the image.
+        Returns a tuple (x_min, y_min, width, height).
+        """
+        nonzero_mask = img > 0
+        nonzero_indices = nonzero_mask.nonzero()
+        if nonzero_indices.size(0) == 0:
+            return None
+
+        y_coords = nonzero_indices[:, 1]
+        x_coords = nonzero_indices[:, 2]
+        min_x = x_coords.min().item()
+        max_x = x_coords.max().item()
+        min_y = y_coords.min().item()
+        max_y = y_coords.max().item()
+        width = max_x - min_x + 1
+        height = max_y - min_y + 1
+        return (min_x, min_y, width, height)
 
 
 class SimpleLinearTrajectory(BaseTrajectory):
@@ -228,13 +285,22 @@ class NonLinearTrajectory(BaseTrajectory):
         n,
         padding,
         initial_position,
-        first_appearance_frame=0,
+        mnist_img,
+        first_appearance_frame,
+        canvas_width,
+        canvas_height,
         path_type="sine",
         amplitude=10,
         frequency=0.1,
         **kwargs
     ):
-        super().__init__(digit_label, affine_params, n, padding, initial_position, **kwargs)
+        super().__init__(
+            digit_label, affine_params, n, padding, initial_position,
+            mnist_img,
+            first_appearance_frame,
+            canvas_width,
+            canvas_height,
+            **kwargs)
         self.first_appearance_frame = first_appearance_frame
         self.path_type = path_type
         self.amplitude = amplitude
@@ -242,17 +308,10 @@ class NonLinearTrajectory(BaseTrajectory):
         self.t = 0  # Time parameter for trajectory
 
     def transform(self, img, position):
-        import math
-
-        # For frames before appearance, keep position off-screen
-        if self.t < self.first_appearance_frame:
-            self.t += 1
-            # Return off-screen position
-            return img, (-1000, -1000)
 
         # Base movement
-        base_x = position[0] + self.translate[0]
-        base_y = position[1] + self.translate[1]
+        base_x = position[0] #+ self.translate[0]
+        base_y = position[1] #+ self.translate[1]
 
         # Apply non-linear component
         if self.path_type == "sine":
@@ -270,17 +329,15 @@ class NonLinearTrajectory(BaseTrajectory):
         else:
             new_position = (base_x, base_y)
 
-        # Calculate relative translation for this frame
-        # relative_translation = [new_position[0] - position[0], new_position[1] - position[1]]
-
-        # img = TF.affine(
-        #     img,
-        #     angle=self.angle,
-        #     translate=relative_translation,
-        #     scale=self.scale,
-        #     shear=self.shear,
-        #     **self.kwargs,
-        # )
+        # Use affine transformation to move the digit to the correct position
+        img = TF.affine(
+            img,
+            angle=self.angle,
+            translate=new_position,  # x, y are already relative to center
+            scale=self.scale,
+            shear=self.shear,
+            **self.kwargs,
+        )
 
         self.t += 1
-        return None, new_position
+        return img, new_position
