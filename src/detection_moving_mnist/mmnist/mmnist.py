@@ -178,6 +178,20 @@ class MovingMNIST:
                     digit_canvas_after_overlap[placement_mask] = digit_canvas[placement_mask]
                     visible_pixels = digit_canvas_after_overlap.nonzero()
 
+                    # Check if center point is visible or overlapped
+                    cx = x + self.canvas_width // 2
+                    cy = y + self.canvas_height // 2
+
+                    # Only add valid center points
+                    if 0 <= cx < self.canvas_width and 0 <= cy < self.canvas_height:
+                        # Check if center point is overlapped by previously placed digits
+                        center_point_visible = placement_mask[0, int(cy), int(cx)].item()
+                        # We'll still track the point but mark visibility based on overlap
+                        visibility = 2 if center_point_visible else 1
+                    else:
+                        visibility = 0  # Point is outside canvas
+
+
                     if visible_pixels.size(0) > 0:  # Check if there are any visible pixels
                         # Get y, x coordinates of visible pixels
                         y_coords = visible_pixels[:, 1]
@@ -220,7 +234,7 @@ class MovingMNIST:
                     bboxes_keypoints_coco_format.append((0, 0, 0))
                 else:
                     # Convert center point to top-left coordinate system
-                    bboxes_keypoints_coco_format.append((cx, cy, 2))
+                    bboxes_keypoints_coco_format.append((cx, cy, visibility))
 
             target['labels'] = labels
             target['center_points'] = center_points
