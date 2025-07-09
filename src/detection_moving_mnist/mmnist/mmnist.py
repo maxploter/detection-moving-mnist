@@ -57,36 +57,32 @@ class MovingMNIST:
 
         return (x,y), mnist_idx
 
-    def _one_moving_digit(self, initial_translation, appearance_frame=0, nonlinear_params=None):
+    def _one_moving_digit(self, initial_translation):
         # Get the original digit and its properties
         initial_position, mnist_idx = self.random_digit(initial_translation)
 
         mnist_img, label = self.mnist[mnist_idx]
         mnist_img = TF.to_tensor(mnist_img)
 
-        if isinstance(self.trajectory, type) and issubclass(self.trajectory, NonLinearTrajectory):
-            params = nonlinear_params or {}
-            traj = self.trajectory(
-                label,
-                self.affine_params,
-                n=self.num_frames,
-                padding=self.padding,
-                initial_position=initial_position,
-                first_appearance_frame=appearance_frame,
-                mnist_img=mnist_img,
-                canvas_width=self.canvas_width,
-                canvas_height=self.canvas_height,
-                **params
-            )
+        if self.enable_delayed_appearance:
+            appearance_frame = random.randint(0, self.num_frames // 2)
         else:
-            traj = self.trajectory(
-                label,
-                self.affine_params,
-                n=self.num_frames,
-                padding=self.padding,
-                initial_position=initial_position,
-                mnist_img=mnist_img,
-            )
+            appearance_frame = 0
+
+        trajectory_params = get_trajectory_params(self.trajectory, mnist_label=label)
+
+        traj = self.trajectory(
+            label,
+            self.affine_params,
+            n=self.num_frames,
+            padding=self.padding,
+            initial_position=initial_position,
+            first_appearance_frame=appearance_frame,
+            mnist_img=mnist_img,
+            canvas_width=self.canvas_width,
+            canvas_height=self.canvas_height,
+            **trajectory_params
+        )
 
         trajectory_data = traj()
 
@@ -98,50 +94,8 @@ class MovingMNIST:
                                                                    digits) if self.initial_digits_overlap_free else translate_digits_randomly(
             self.canvas_width, self.canvas_height, digits, canvas_multiplier=1.5)
 
-        appearance_frames = []
-        nonlinear_params_list = []
-
-        for _ in range(digits):
-            # Randomly determine when digit appears
-            if self.enable_delayed_appearance:
-                appearance_frame = random.randint(0, self.num_frames // 2)
-            else:
-                appearance_frame = 0
-
-            def poly_coeffs():
-                linear_axis = random.choice(['x', 'y'])
-
-                # Initialize coefficients
-                x_coeffs = [0, random.uniform(-1.2, 1.2), 0]  # Default to linear for x
-                y_coeffs = [0, random.uniform(-1.2, 1.2), 0]  # Default to linear for y
-
-                # Set quadratic term for the non-linear coordinate
-                if linear_axis == 'x':
-                    # x is linear, y is quadratic
-                    y_coeffs[2] = random.uniform(-0.15, 0.15)
-                else:
-                    # y is linear, x is quadratic
-                    x_coeffs[2] = random.uniform(-0.15, 0.15)
-
-                return {
-                    'x': x_coeffs,
-                    'y': y_coeffs,
-                    'poly_scale': random.uniform(1.0, 1.5),
-                }
-
-            nonlinear_params = {
-                "path_type": random.choice(["polynomial", "sine", "circle", "spiral"]),
-                "amplitude": random.uniform(1, 10),
-                "frequency": random.uniform(0.05, 0.25),
-                "poly_coeffs": poly_coeffs(),
-            }
-
-            appearance_frames.append(appearance_frame)
-            nonlinear_params_list.append(nonlinear_params)
-
         trajectory_data_per_digit, all_labels, mnist_indices = zip(
-            *(self._one_moving_digit(initial_digit_translations[i], appearance_frame=appearance_frames[i],
-                                     nonlinear_params=nonlinear_params_list[i]) for i in range(digits))
+            *(self._one_moving_digit(initial_digit_translations[i]) for i in range(digits))
         )
 
         # Initialize frame tensor
@@ -539,3 +493,107 @@ def translate_digits_randomly(canvas_width, canvas_height, num_objects, digit_si
         tx, ty = canvas_width//2 - cx, canvas_height//2 - cy
         placed_position_translations.append((tx, ty))
     return placed_position_translations
+
+def get_trajectory_params(trajectory, mnist_label):
+    if isinstance(trajectory, NonLinearTrajectory):
+
+        path_type = get_path_type(mnist_label)
+
+        if path_type == "polynomial":
+            return {
+            "path_type": path_type,
+            "amplitude": random.uniform(1, 10),
+            "frequency": random.uniform(0.05, 0.25),
+            "poly_coeffs": {
+                'x': [0, random.uniform(-1.2, 1.2), random.uniform(-0.15, 0.15)],
+                'y': [0, random.uniform(-1.2, 1.2), random.uniform(-0.15, 0.15)],
+                'poly_scale': random.uniform(1.0, 1.5),
+            }
+        }
+        elif path_type == "sine":
+            return {
+                "path_type": path_type,
+                "amplitude": random.uniform(1, 10),
+                "frequency": random.uniform(0.05, 0.25),
+                "poly_coeffs": {
+                    'x': [0, random.uniform(-1.2, 1.2), 0],
+                    'y': [0, random.uniform(-1.2, 1.2), 0],
+                    'poly_scale': random.uniform(1.0, 1.5),
+                }
+            }
+        elif path_type == "circle":
+            return {
+                "path_type": path_type,
+                "amplitude": random.uniform(1, 10),
+                "frequency": random.uniform(0.05, 0.25),
+                "poly_coeffs": {
+                    'x': [0, random.uniform(-1.2, 1.2), 0],
+                    'y': [0, random.uniform(-1.2, 1.2), 0],
+                    'poly_scale': random.uniform(1.0, 1.5),
+                }
+            }
+        elif path_type == "spiral":
+            # For spiral, we can use a polynomial-like representation
+            # but with a different scaling factor for the spiral effect
+            return {
+                "path_type": path_type,
+                "amplitude": random.uniform(1, 10),
+                "frequency": random.uniform(0.05, 0.25),
+                "poly_coeffs": {
+                    'x': [0, random.uniform(-1.2, 1.2), random.uniform(-0.15, 0.15)],
+                    'y': [0, random.uniform(-1.2, 1.2), random.uniform(-0.15, 0.15)],
+                    'poly_scale': random.uniform(1.0, 1.5),
+                }
+            }
+
+        def poly_coeffs():
+            linear_axis = random.choice(['x', 'y'])
+
+            # Initialize coefficients
+            x_coeffs = [0, random.uniform(-1.2, 1.2), 0]  # Default to linear for x
+            y_coeffs = [0, random.uniform(-1.2, 1.2), 0]  # Default to linear for y
+
+            # Set quadratic term for the non-linear coordinate
+            if linear_axis == 'x':
+                # x is linear, y is quadratic
+                y_coeffs[2] = random.uniform(-0.15, 0.15)
+            else:
+                # y is linear, x is quadratic
+                x_coeffs[2] = random.uniform(-0.15, 0.15)
+
+            return {
+                'x': x_coeffs,
+                'y': y_coeffs,
+                'poly_scale': random.uniform(1.0, 1.5),
+            }
+
+        nonlinear_params = {
+            "path_type": random.choice(["polynomial", "sine", "circle", "spiral"]),
+            "amplitude": random.uniform(1, 10),
+            "frequency": random.uniform(0.05, 0.25),
+            "poly_coeffs": poly_coeffs(),
+        }
+
+
+
+        return {
+            "path_type": trajectory.path_type,
+            "amplitude": trajectory.amplitude,
+            "frequency": trajectory.frequency,
+            "poly_coeffs": trajectory.poly_coeffs,
+        }
+    else:
+        raise NotImplementedError(f"Trajectory type {type(trajectory)} is not supported for saving parameters.")
+
+
+def get_path_type(mnist_label):
+    if mnist_label == 0:
+        return "polynomial"
+    elif mnist_label == 1:
+        return "sine"
+    elif mnist_label == 2:
+        return "circle"
+    elif mnist_label == 3:
+        return "spiral"
+    else:
+        raise ValueError(f"Invalid MNIST label for path type: {mnist_label}. Expected 0-3, got {mnist_label}.")
