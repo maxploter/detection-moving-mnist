@@ -1,14 +1,21 @@
 # Detection Moving MNIST Dataset
 
 ## Version Easy
-![Detection Moving MNIST Dataset (Easy) annotated video 1](./annotated_video_1.gif)
-![Detection Moving MNIST Dataset (Easy) annotated video 2](./annotated_video_2.gif)
-![Detection Moving MNIST Dataset (Easy) annotated video 3](./annotated_video_3.gif)
+![Detection Moving MNIST Dataset (Easy) annotated video 1](assets/annotated_video_1.gif)
+![Detection Moving MNIST Dataset (Easy) annotated video 2](assets/annotated_video_2.gif)
+![Detection Moving MNIST Dataset (Easy) annotated video 3](assets/annotated_video_3.gif)
 
 ## Version Medium
-![annotated_video_medium_cp_3.gif](annotated_video_medium_0.gif)
-![annotated_video_medium_cp_3.gif](annotated_video_medium_1.gif)
-![annotated_video_medium_cp_3.gif](annotated_video_medium_2.gif)
+![annotated_video_medium_cp_3.gif](assets/annotated_video_medium_0.gif)
+![annotated_video_medium_cp_3.gif](assets/annotated_video_medium_1.gif)
+![annotated_video_medium_cp_3.gif](assets/annotated_video_medium_2.gif)
+![annotated_video_medium_cp_3.gif](assets/annotated_video_medium_3.gif)
+![annotated_video_medium_cp_3.gif](assets/annotated_video_medium_4.gif)
+![annotated_video_medium_cp_3.gif](assets/annotated_video_medium_5.gif)
+![annotated_video_medium_cp_3.gif](assets/annotated_video_medium_6.gif)
+![annotated_video_medium_cp_3.gif](assets/annotated_video_medium_7.gif)
+![annotated_video_medium_cp_3.gif](assets/annotated_video_medium_8.gif)
+![annotated_video_medium_cp_3.gif](assets/annotated_video_medium_9.gif)
 
 This dataset extends the [original Moving MNIST dataset](https://www.cs.toronto.edu/~nitish/unsupervised_video/). A few
 variations on how digits move are added.

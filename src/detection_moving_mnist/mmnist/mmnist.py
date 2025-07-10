@@ -9,8 +9,6 @@ import torchvision.transforms.functional as TF
 from torchvision.datasets import MNIST
 from tqdm import tqdm
 
-from src.detection_moving_mnist.mmnist.trajectory import NonLinearTrajectory
-
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
@@ -495,105 +493,134 @@ def translate_digits_randomly(canvas_width, canvas_height, num_objects, digit_si
     return placed_position_translations
 
 def get_trajectory_params(trajectory, mnist_label):
-    if isinstance(trajectory, NonLinearTrajectory):
-
+    if trajectory.__name__ == 'NonLinearTrajectory':
         path_type = get_path_type(mnist_label)
 
-        if path_type == "polynomial":
-            return {
+        params = {
             "path_type": path_type,
             "amplitude": random.uniform(1, 10),
             "frequency": random.uniform(0.05, 0.25),
-            "poly_coeffs": {
-                'x': [0, random.uniform(-1.2, 1.2), random.uniform(-0.15, 0.15)],
-                'y': [0, random.uniform(-1.2, 1.2), random.uniform(-0.15, 0.15)],
-                'poly_scale': random.uniform(1.0, 1.5),
-            }
         }
-        elif path_type == "sine":
-            return {
-                "path_type": path_type,
-                "amplitude": random.uniform(1, 10),
-                "frequency": random.uniform(0.05, 0.25),
+
+        # Add trajectory-specific parameters
+        if path_type == "sine":
+            params.update({
+                "phase": random.uniform(0, 2 * math.pi),  # Phase shift for the sine wave
+                "direction": random.choice(["vertical"]),  # Direction of sine wave
                 "poly_coeffs": {
                     'x': [0, random.uniform(-1.2, 1.2), 0],
                     'y': [0, random.uniform(-1.2, 1.2), 0],
                     'poly_scale': random.uniform(1.0, 1.5),
                 }
-            }
-        elif path_type == "circle":
-            return {
-                "path_type": path_type,
-                "amplitude": random.uniform(1, 10),
-                "frequency": random.uniform(0.05, 0.25),
-                "poly_coeffs": {
-                    'x': [0, random.uniform(-1.2, 1.2), 0],
-                    'y': [0, random.uniform(-1.2, 1.2), 0],
-                    'poly_scale': random.uniform(1.0, 1.5),
-                }
-            }
-        elif path_type == "spiral":
-            # For spiral, we can use a polynomial-like representation
-            # but with a different scaling factor for the spiral effect
-            return {
-                "path_type": path_type,
-                "amplitude": random.uniform(1, 10),
-                "frequency": random.uniform(0.05, 0.25),
+            })
+
+        elif path_type == "polynomial":
+            params.update({
                 "poly_coeffs": {
                     'x': [0, random.uniform(-1.2, 1.2), random.uniform(-0.15, 0.15)],
                     'y': [0, random.uniform(-1.2, 1.2), random.uniform(-0.15, 0.15)],
                     'poly_scale': random.uniform(1.0, 1.5),
                 }
-            }
+            })
 
-        def poly_coeffs():
-            linear_axis = random.choice(['x', 'y'])
+        elif path_type == "circle":
+            params.update({
+                "radius": random.uniform(5, 15),  # Circle radius
+                "angular_velocity": random.uniform(0.05, 0.2),  # Speed of rotation
+                "center_offset": (random.uniform(-5, 5), random.uniform(-5, 5)),  # Offset from initial position
+                "poly_coeffs": {
+                    'x': [0, random.uniform(-1.2, 1.2), 0],
+                    'y': [0, random.uniform(-1.2, 1.2), 0],
+                    'poly_scale': random.uniform(1.0, 1.5),
+                }
+            })
 
-            # Initialize coefficients
-            x_coeffs = [0, random.uniform(-1.2, 1.2), 0]  # Default to linear for x
-            y_coeffs = [0, random.uniform(-1.2, 1.2), 0]  # Default to linear for y
+        elif path_type == "spiral":
+            params.update({
+                "growth_rate": random.uniform(0.1, 0.3),  # Controls how quickly spiral expands
+                "angular_velocity": random.uniform(0.05, 0.2),  # Speed of rotation
+                "direction": random.choice(["outward", "inward"]),  # Spiral direction
+                "poly_coeffs": {
+                    'x': [0, random.uniform(-1.2, 1.2), random.uniform(-0.15, 0.15)],
+                    'y': [0, random.uniform(-1.2, 1.2), random.uniform(-0.15, 0.15)],
+                    'poly_scale': random.uniform(1.0, 1.5),
+                }
+            })
 
-            # Set quadratic term for the non-linear coordinate
-            if linear_axis == 'x':
-                # x is linear, y is quadratic
-                y_coeffs[2] = random.uniform(-0.15, 0.15)
-            else:
-                # y is linear, x is quadratic
-                x_coeffs[2] = random.uniform(-0.15, 0.15)
+        elif path_type == "figure8":
+            params.update({
+                "scale_x": random.uniform(5, 15),  # Horizontal scale
+                "scale_y": random.uniform(5, 15),  # Vertical scale
+                "angular_velocity": random.uniform(0.05, 0.2),  # Speed of movement
+                "rotation": random.uniform(0, math.pi/2)  # Rotation angle of the figure-8
+            })
 
-            return {
-                'x': x_coeffs,
-                'y': y_coeffs,
-                'poly_scale': random.uniform(1.0, 1.5),
-            }
+        elif path_type == "elliptical":
+            params.update({
+                "semi_major": random.uniform(8, 20),  # Semi-major axis
+                "semi_minor": random.uniform(4, 12),  # Semi-minor axis
+                "angular_velocity": random.uniform(0.05, 0.2),  # Speed of rotation
+                "rotation": random.uniform(0, math.pi/2),  # Rotation of ellipse
+                "center_offset": (random.uniform(-5, 5), random.uniform(-5, 5))  # Offset from initial position
+            })
 
-        nonlinear_params = {
-            "path_type": random.choice(["polynomial", "sine", "circle", "spiral"]),
-            "amplitude": random.uniform(1, 10),
-            "frequency": random.uniform(0.05, 0.25),
-            "poly_coeffs": poly_coeffs(),
-        }
+        elif path_type == "cubic":
+            params.update({
+                "coefficients": {
+                    'a': random.uniform(-0.001, 0.001),  # x³ coefficient
+                    'b': random.uniform(-0.05, 0.05),    # x² coefficient
+                    'c': random.uniform(-1.0, 1.0),      # x coefficient
+                    'd': 0  # Constant term, usually 0 to start at origin
+                },
+                "direction": random.choice(["x", "y", "both"]),  # Which coordinate uses cubic function
+                "scale": random.uniform(0.5, 2.0)  # Scale factor for the motion
+            })
 
+        elif path_type == "zigzag":
+            params.update({
+                "segment_length": random.uniform(5, 20),  # Length of each segment
+                "angle": random.uniform(math.pi/6, math.pi/3),  # Angle of zigzag
+                "direction": random.choice(["horizontal", "vertical", "diagonal"]),  # Primary direction
+                "randomness": random.uniform(0, 0.3)  # Random variation in segment length/angle
+            })
 
+        elif path_type == "exponential":
+            params.update({
+                "base": random.uniform(1.01, 1.1),  # Base of exponential (slightly above 1)
+                "scale": random.uniform(0.5, 2.0),  # Scale factor for the curve
+                "direction": random.choice(["up", "down", "left", "right"]),  # Direction of growth
+                "decay_factor": random.uniform(0.9, 0.99)  # Optional decay to limit growth
+            })
 
-        return {
-            "path_type": trajectory.path_type,
-            "amplitude": trajectory.amplitude,
-            "frequency": trajectory.frequency,
-            "poly_coeffs": trajectory.poly_coeffs,
-        }
-    else:
-        raise NotImplementedError(f"Trajectory type {type(trajectory)} is not supported for saving parameters.")
+        elif path_type == "hyperbolic":
+            params.update({
+                "scale_x": random.uniform(5, 15),  # Horizontal scale
+                "scale_y": random.uniform(5, 15),  # Vertical scale
+                "shift": random.uniform(0.5, 5.0),  # Shift from origin to avoid singularity
+                "orientation": random.choice(["x", "y"]),  # Primary axis
+                "branch": random.choice(["positive", "negative", "both"])  # Which branch(es) to use
+            })
+
+        return params
+
+    raise NotImplementedError(f"Trajectory type {type(trajectory)} is not supported for saving parameters.")
 
 
 def get_path_type(mnist_label):
-    if mnist_label == 0:
-        return "polynomial"
-    elif mnist_label == 1:
-        return "sine"
-    elif mnist_label == 2:
-        return "circle"
-    elif mnist_label == 3:
-        return "spiral"
-    else:
-        raise ValueError(f"Invalid MNIST label for path type: {mnist_label}. Expected 0-3, got {mnist_label}.")
+    path_types = {
+        0: "sine",         # Sinusoidal wave motion: y(t) = a * sin(ωt)
+        1: "polynomial",   # Polynomial trajectory: y(t) = ax² + bx + c
+        2: "circle",       # Circular orbit: x(t) = r * cos(t), y(t) = r * sin(t)
+        3: "spiral",       # Outward spiral: x(t) = at * cos(t), y(t) = at * sin(t)
+        4: "figure8",      # Figure-8 curve: x(t) = a * sin(2t), y(t) = a * sin(t)
+        5: "elliptical",   # Elliptical path: x(t) = a * cos(t), y(t) = b * sin(t), where a≠b
+        6: "cubic",        # Cubic function: y(t) = at³ + bt² + ct + d
+        7: "zigzag",       # Zigzag pattern: y(t) = a * abs(((t/b) % 2) - 1)
+        8: "exponential",  # Exponential curve: y(t) = a * e^(bt)
+        9: "hyperbolic",   # Hyperbolic path: x(t) = a * cosh(t), y(t) = b * sinh(t)
+    }
+
+    if mnist_label not in path_types:
+        raise ValueError(f"Invalid MNIST label: {mnist_label}. Expected 0-9.")
+
+    return path_types[mnist_label]

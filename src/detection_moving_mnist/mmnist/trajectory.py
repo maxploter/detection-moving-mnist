@@ -289,10 +289,6 @@ class NonLinearTrajectory(BaseTrajectory):
         first_appearance_frame,
         canvas_width,
         canvas_height,
-        path_type="sine",
-        amplitude=10,
-        frequency=0.1,
-        poly_coeffs=None,
         **kwargs
     ):
         super().__init__(
@@ -302,55 +298,191 @@ class NonLinearTrajectory(BaseTrajectory):
             canvas_width,
             canvas_height,
             **kwargs)
-        self.path_type = path_type
-        self.amplitude = amplitude
-        self.frequency = frequency
+
+        self.path_type = kwargs['path_type']
         self.t = 0  # Time parameter for trajectory
 
-        # Default to quadratic motion if no coefficients provided
-        self.poly_coeffs_x = poly_coeffs['x'] or [0, 1, 0]  # x(t) = t (linear in x)
-        self.poly_coeffs_y = poly_coeffs['y'] or [0, 0, 1]  # y(t) = t² (quadratic in y)
-        self.poly_scale = poly_coeffs.get('scale', 1)
+        # Store common parameters
+        self.params = kwargs.copy()
 
     def transform(self, img, position):
-        # Base movement
+        # Base position
         base_x = position[0]
         base_y = position[1]
+        offset_x = 0
+        offset_y = 0
 
-        # Apply non-linear component
+        # Extract common parameters
+        amplitude = self.params['amplitude']
+        frequency = self.params['frequency']
+
+        # Apply trajectory specific transformation
         if self.path_type == "sine":
-            offset_y = self.amplitude * math.sin(self.frequency * self.t)
-            new_position = (base_x + self.translate[0], base_y + offset_y)
+            phase = self.params['phase']
+            direction = self.params['direction']
+
+            if direction == "vertical":
+                offset_y = amplitude * math.sin(frequency * self.t + phase)
+            elif direction == "horizontal":
+                offset_x = amplitude * math.sin(frequency * self.t + phase)
+            else:  # diagonal
+                offset_x = amplitude * 0.7071 * math.sin(frequency * self.t + phase)
+                offset_y = amplitude * 0.7071 * math.sin(frequency * self.t + phase)
+
         elif self.path_type == "circle":
-            offset_x = self.amplitude * math.cos(self.frequency * self.t)
-            offset_y = self.amplitude * math.sin(self.frequency * self.t)
-            new_position = (base_x + offset_x, base_y + offset_y)
+            offset_x = amplitude * math.cos(frequency * self.t)
+            offset_y = amplitude * math.sin(frequency * self.t)
+
+            # Apply center offset if specified
+            center_offset = self.params['center_offset']
+            offset_x += center_offset[0]
+            offset_y += center_offset[1]
+
         elif self.path_type == "spiral":
-            growing_amplitude = self.amplitude * (1 + 0.05 * self.t)
-            offset_x = growing_amplitude * math.cos(self.frequency * self.t)
-            offset_y = growing_amplitude * math.sin(self.frequency * self.t)
-            new_position = (base_x + offset_x, base_y + offset_y)
+            growing_amplitude = amplitude * (1 + 0.05 * self.t)
+            offset_x = growing_amplitude * math.cos(frequency * self.t)
+            offset_y = growing_amplitude * math.sin(frequency * self.t)
+
         elif self.path_type == "polynomial":
+            # Extract polynomial coefficients
+            poly_coeffs = self.params['poly_coeffs']
+            poly_scale = poly_coeffs.get('poly_scale', 1.0)
+
             # Calculate polynomial trajectories for both x and y
-            offset_x = sum(coeff * (self.t ** i) for i, coeff in enumerate(self.poly_coeffs_x))
-            offset_y = sum(coeff * (self.t ** i) for i, coeff in enumerate(self.poly_coeffs_y))
+            poly_coeffs_x = poly_coeffs.get('x', [0, 1, 0])
+            poly_coeffs_y = poly_coeffs.get('y', [0, 1, 0])
+
+            offset_x = sum(coeff * (self.t ** i) for i, coeff in enumerate(poly_coeffs_x))
+            offset_y = sum(coeff * (self.t ** i) for i, coeff in enumerate(poly_coeffs_y))
 
             # Apply scaling factor
-            offset_x *= self.poly_scale
-            offset_y *= self.poly_scale
+            offset_x *= poly_scale
+            offset_y *= poly_scale
 
-            new_position = (base_x + offset_x, base_y + offset_y)
-        else:
-            new_position = (base_x, base_y)
+        elif self.path_type == "figure8":
+            scale_x = self.params['scale_x']
+            scale_y = self.params['scale_y']
+            angular_velocity = self.params['angular_velocity']
+            rotation = self.params['rotation']
 
-        # Use affine transformation to move the digit to the correct position
+            # Figure 8 parametric equations
+            raw_x = scale_x * math.sin(angular_velocity * self.t)
+            raw_y = scale_y * math.sin(2 * angular_velocity * self.t)
+
+            # Apply rotation if specified
+            offset_x = raw_x * math.cos(rotation) - raw_y * math.sin(rotation)
+            offset_y = raw_x * math.sin(rotation) + raw_y * math.cos(rotation)
+
+        elif self.path_type == "elliptical":
+            semi_major = self.params['semi_major']
+            semi_minor = self.params['semi_minor']
+            angular_velocity = self.params['angular_velocity']
+            rotation = self.params['rotation']
+            center_offset = self.params['center_offset']
+
+            # Elliptical parametric equations
+            raw_x = semi_major * math.cos(angular_velocity * self.t)
+            raw_y = semi_minor * math.sin(angular_velocity * self.t)
+
+            # Apply rotation
+            offset_x = raw_x * math.cos(rotation) - raw_y * math.sin(rotation) + center_offset[0]
+            offset_y = raw_x * math.sin(rotation) + raw_y * math.cos(rotation) + center_offset[1]
+
+        elif self.path_type == "cubic":
+            coefficients = self.params['coefficients']
+            direction = self.params['direction']
+            scale = self.params['scale']
+
+            t = self.t * scale
+            cubic_value = (coefficients['a'] * (t**3) +
+                         coefficients['b'] * (t**2) +
+                         coefficients['c'] * t +
+                         coefficients['d'])
+
+            if direction == "x":
+                offset_x = cubic_value
+            elif direction == "y":
+                offset_y = cubic_value
+            else:  # both
+                offset_x = cubic_value * 0.7071
+                offset_y = cubic_value * 0.7071
+
+        elif self.path_type == "zigzag":
+            segment_length = self.params['segment_length']
+            angle = self.params['angle']
+            direction = self.params['direction']
+            randomness = self.params['randomness']
+
+            # Basic zigzag pattern
+            segment = (self.t / segment_length) % 2
+            zigzag = abs(segment - 1) * 2 - 1  # Maps to [-1, 1]
+
+            # Add randomness if specified
+            if randomness > 0:
+                zigzag += random.uniform(-randomness, randomness)
+
+            if direction == "horizontal":
+                offset_x = self.t
+                offset_y = zigzag * amplitude
+            elif direction == "vertical":
+                offset_x = zigzag * amplitude
+                offset_y = self.t
+            else:  # diagonal
+                offset_x = self.t * 0.7071
+                offset_y = zigzag * amplitude * 0.7071
+
+        elif self.path_type == "exponential":
+            base = self.params['base']
+            scale = self.params['scale']
+            direction = self.params['direction']
+            decay_factor = self.params['decay_factor']
+
+            # Calculate exponential value with optional decay
+            exp_value = scale * (base ** (self.t * (decay_factor ** self.t)))
+
+            if direction == "right":
+                offset_x = exp_value
+            elif direction == "left":
+                offset_x = -exp_value
+            elif direction == "up":
+                offset_y = -exp_value
+            else:  # down
+                offset_y = exp_value
+
+        elif self.path_type == "hyperbolic":
+            scale_x = self.params['scale_x']
+            scale_y = self.params['scale_y']
+            shift = self.params['shift']
+            orientation = self.params['orientation']
+            branch = self.params['branch']
+
+            # Adjusted time value to avoid singularity
+            t_adj = self.t + shift
+
+            if orientation == "x":
+                if branch == "positive" or (branch == "both" and self.t % 2 == 0):
+                    offset_x = scale_x / t_adj
+                else:
+                    offset_x = -scale_x / t_adj
+                offset_y = self.t
+            else:  # y-orientation
+                offset_x = self.t
+                if branch == "positive" or (branch == "both" and self.t % 2 == 0):
+                    offset_y = scale_y / t_adj
+                else:
+                    offset_y = -scale_y / t_adj
+
+        # Calculate new position
+        new_position = (base_x + offset_x + self.translate[0], base_y + offset_y + self.translate[1])
+
+        # Use affine transformation to place the digit at the new position
         img = TF.affine(
             img,
             angle=self.angle,
             translate=new_position,
             scale=self.scale,
             shear=self.shear,
-            **self.kwargs,
+            fill=0
         )
 
         self.t += 1
