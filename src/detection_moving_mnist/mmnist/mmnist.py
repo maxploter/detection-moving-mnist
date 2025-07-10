@@ -30,6 +30,7 @@ class MovingMNIST:
         initial_digits_overlap_free=False,  # if we want to place digits overlap free
         enable_ranks=True,
         enable_delayed_appearance=True,
+        max_retries=10,  # maximum number of retries for empty target sequences
     ):
         self.train = train
         self.mnist = MNIST(path, download=True, train=train)
@@ -45,6 +46,7 @@ class MovingMNIST:
         self.initial_digits_overlap_free = initial_digits_overlap_free
         self.enable_ranks = enable_ranks
         self.enable_delayed_appearance = enable_delayed_appearance
+        self.max_retries = max_retries
 
     def random_digit(self, initial_translation):
         """Get a random MNIST digit randomly placed on the canvas"""
@@ -86,7 +88,15 @@ class MovingMNIST:
 
         return trajectory_data, label, mnist_idx
 
-    def __getitem__(self, i):
+    def _has_valid_targets(self, targets):
+        """Check if at least one frame in the sequence has valid targets."""
+        for target in targets:
+            if target['labels'] and len(target['labels']) > 0:
+                return True
+        return False
+
+    def _get_internal(self, i):
+        """Generate a sequence of moving digits with their targets."""
         digits = random.choice(self.num_digits)
         initial_digit_translations = translate_digits_overlap_free(self.canvas_width, self.canvas_height,
                                                                    digits) if self.initial_digits_overlap_free else translate_digits_randomly(
@@ -226,6 +236,22 @@ class MovingMNIST:
             targets,
             mnist_indices
         )
+
+    def __getitem__(self, i):
+        """
+        Get a sequence with at least one valid target. Will retry up to max_retries times.
+        """
+        for attempt in range(self.max_retries):
+            frames, targets, mnist_indices = self._get_internal(i)
+            if self._has_valid_targets(targets):
+                return frames, targets, mnist_indices
+
+            if attempt + 1 < self.max_retries:
+                logging.debug(f"Generated sequence has no valid targets. Retrying ({attempt+1}/{self.max_retries})...")
+
+        logging.warning(f"Failed to generate sequence with valid targets after {self.max_retries} attempts. "
+                        f"Returning sequence without valid targets.")
+        return frames, targets, mnist_indices
 
     def save(self, directory, num_videos, num_videos_hard, whole_dataset=False, hf_videofolder_format=False, hf_arrow_format=False):
         if not os.path.exists(directory):
