@@ -11,7 +11,7 @@ from src.detection_moving_mnist.mmnist.trajectory import (
     BouncingTrajectory,
     RandomTrajectory,
     SimpleLinearTrajectory,
-    OutOfBoundsTrajectory,
+    OutOfBoundsTrajectory, NonLinearTrajectory,
 )
 
 TRAIN_SPLIT = 'train'
@@ -28,10 +28,10 @@ CONFIGS = {
     },
     "medium": {
         "angle": (0, 0),
-        "translate": ((-2, 2), (-2, 2)),
+        "translate": ((-5, 5), (-5, 5)),
         "scale": (1, 1),
         "shear": (0, 0),
-        "num_digits": (2,),
+        "num_digits": (1,2,3,4,5,6,7,8,9,10),
     },
     "hard": {
         "angle": (0, 0),
@@ -50,7 +50,7 @@ CONFIGS = {
 }
 TRAJECTORIES = {
     "easy": SimpleLinearTrajectory,
-    "medium": BouncingTrajectory,
+    "medium": NonLinearTrajectory,
     "hard": OutOfBoundsTrajectory,
     "random": RandomTrajectory,
 }
@@ -78,6 +78,22 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=5561, help="Seed.")
     parser.add_argument('--hf_videofolder_format', action='store_true', help='Save in Hugging Face video folder format.')
     parser.add_argument('--hf_arrow_format', action='store_true', help='Save in Hugging Face arrow format.')
+    parser.add_argument(
+        "--enable_ranks",
+        action='store_true',
+        help="Enable ranks for the dataset. This is useful for training models that require rank information."
+    )
+    parser.add_argument(
+        "--enable_delayed_appearance",
+        action='store_true',
+        help="Enable delayed appearance of digits in the dataset. This means digits will not appear at the beginning of the video."
+    )
+    parser.add_argument(
+        "--initial_digits_overlap_free",
+        action='store_true',
+        help="Ensure that the initial digits are placed without overlap in the first frame."
+    )
+
     args = parser.parse_args()
 
     return args
@@ -90,7 +106,7 @@ def main(args):
     np.random.seed(args.seed)
     random.seed(args.seed)
 
-    if version != 'easy':
+    if version not in ['easy', 'medium']:
         raise ValueError(f'Version {version} is not yet implemented.')
 
     if version not in CONFIGS:
@@ -117,6 +133,9 @@ def main(args):
         affine_params=affine_params,
         num_digits=CONFIGS[version]["num_digits"],
         num_frames=num_frames_per_video,
+        enable_ranks=args.enable_ranks,
+        enable_delayed_appearance=args.enable_delayed_appearance,
+        initial_digits_overlap_free=args.initial_digits_overlap_free,
     )
     dataset.save(
         directory=directory,

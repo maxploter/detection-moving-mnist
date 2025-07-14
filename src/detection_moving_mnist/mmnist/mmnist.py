@@ -27,7 +27,10 @@ class MovingMNIST:
         ),  # random choice in the tuple to set number of moving digits
         num_frames=10,  # number of frames to generate
         concat=True,  # if we concat the final results (frames, 1, 28, 28) or a list of frames
-        initial_digits_overlap_free=True,  # if we want to place digits overlap free
+        initial_digits_overlap_free=False,  # if we want to place digits overlap free
+        enable_ranks=True,
+        enable_delayed_appearance=True,
+        max_retries=10,  # maximum number of retries for empty target sequences
     ):
         self.train = train
         self.mnist = MNIST(path, download=True, train=train)
@@ -41,86 +44,76 @@ class MovingMNIST:
         self.padding = get_padding(128, 128, 28, 28)  # MNIST images are 28x28
         self.concat = concat
         self.initial_digits_overlap_free = initial_digits_overlap_free
+        self.enable_ranks = enable_ranks
+        self.enable_delayed_appearance = enable_delayed_appearance
+        self.max_retries = max_retries
 
     def random_digit(self, initial_translation):
         """Get a random MNIST digit randomly placed on the canvas"""
         mnist_idx = random.randrange(0, self.total_data_num)
-        img, label = self.mnist[mnist_idx]
-        img = TF.to_tensor(img)
-        pimg = TF.pad(img, padding=self.padding)
 
         x = initial_translation[0]
         y = initial_translation[1]
-        placed_img = TF.affine(pimg, translate=[x, y], angle=0, scale=1, shear=[0])
 
-        nonzero_mask = img > 0
-
-        # Get indices of non-zero pixels (channel, y, x)
-        nonzero_indices = nonzero_mask.nonzero()
-        y_coords = nonzero_indices[:, 1]
-        x_coords = nonzero_indices[:, 2]
-
-        # Find min and max coordinates
-        min_x = x_coords.min().item()
-        max_x = x_coords.max().item()
-        min_y = y_coords.min().item()
-        max_y = y_coords.max().item()
-
-        # Calculate width and height
-        width = max_x - min_x + 1
-        height = max_y - min_y + 1
-
-        # Convert to center-relative coordinates (center is at (14,14))
-        x_min = min_x - 14
-        y_min = min_y - 14
-
-        digit_bbox = (x_min, y_min, width, height)  # (x_min, y_min, w, h) center is at mnist digit center
-
-        return placed_img, (x,y), label, mnist_idx, digit_bbox
+        return (x,y), mnist_idx
 
     def _one_moving_digit(self, initial_translation):
-        digit, initial_position, label, mnist_idx, mnist_digit_bbox = self.random_digit(initial_translation)
+        # Get the original digit and its properties
+        initial_position, mnist_idx = self.random_digit(initial_translation)
+
+        mnist_img, label = self.mnist[mnist_idx]
+        mnist_img = TF.to_tensor(mnist_img)
+
+        if self.enable_delayed_appearance:
+            appearance_frame = random.randint(0, self.num_frames // 2)
+        else:
+            appearance_frame = 0
+
+        trajectory_params = get_trajectory_params(self.trajectory, mnist_label=label)
+
         traj = self.trajectory(
             label,
             self.affine_params,
-            n=self.num_frames - 1,
+            n=self.num_frames,
             padding=self.padding,
             initial_position=initial_position,
+            first_appearance_frame=appearance_frame,
+            mnist_img=mnist_img,
+            canvas_width=self.canvas_width,
+            canvas_height=self.canvas_height,
+            **trajectory_params
         )
-        frames, positions = traj(digit)
 
-        digit_bboxes = [mnist_digit_bbox] * self.num_frames
+        trajectory_data = traj()
 
-        return torch.stack(frames), positions, label, digit_bboxes, mnist_idx
+        return trajectory_data, label, mnist_idx
 
-    def __getitem__(self, i):
+    def _has_valid_targets(self, targets):
+        """Check if at least one frame in the sequence has valid targets."""
+        for target in targets:
+            if target['labels'] and len(target['labels']) > 0:
+                return True
+        return False
+
+    def _get_internal(self, i):
+        """Generate a sequence of moving digits with their targets."""
         digits = random.choice(self.num_digits)
-        initial_digit_translations = translate_digits_overlap_free(self.canvas_width, self.canvas_height, digits) if self.initial_digits_overlap_free else translate_digits_randomly(self.canvas_width, self.canvas_height, digits)
+        initial_digit_translations = translate_digits_overlap_free(self.canvas_width, self.canvas_height,
+                                                                   digits) if self.initial_digits_overlap_free else translate_digits_randomly(
+            self.canvas_width, self.canvas_height, digits, canvas_multiplier=1.5)
 
-        moving_digits, positions, all_labels, digit_bboxes, mnist_indices = zip(
+        trajectory_data_per_digit, all_labels, mnist_indices = zip(
             *(self._one_moving_digit(initial_digit_translations[i]) for i in range(digits))
         )
-        moving_digits = torch.stack(moving_digits)
-        combined_digits = moving_digits.max(dim=0)[0]
 
-        # Coordinate system
-        #            (top)
-        #              -
-        #              |
-        #              |
-        # (left) - ----0---- + (right) X
-        #              |
-        #              |
-        #              + Y
-        #           (bottom)
-        top_boundary = -self.canvas_height // 2
-        bottom_boundary = math.ceil(self.canvas_height / 2) - 1
+        # Initialize frame tensor
+        combined_digits = torch.zeros((self.num_frames, 1, self.canvas_width, self.canvas_height))
+        accumulated_masks = torch.zeros((self.num_frames, 1, self.canvas_width, self.canvas_height), dtype=torch.bool)
 
-        left_boundary = -self.canvas_width // 2
-        right_boundary = math.ceil(self.canvas_width / 2) - 1
-
+        # Apply ranking system when combining digits
         targets = []
-        for frame_number in range(self.num_frames):
+
+        for frame_idx in range(self.num_frames):
             target = {}
 
             labels = []
@@ -128,51 +121,110 @@ class MovingMNIST:
             bboxes_coco_format = [] # x_min, y_min, w, h
             bboxes_keypoints_coco_format = [] # x, y, visibility
             bboxes_labels = []
+            track_ids = []
 
-            for digit_center_points, label, digit_bbox in zip(positions, all_labels, digit_bboxes):
-                cx, cy = digit_center_points[frame_number]
+            for idx in range(digits - 1, -1, -1):
+                mnist_idx = mnist_indices[idx]
+                original_digit, label = self.mnist[mnist_idx]
+                original_digit = TF.to_tensor(original_digit)
+                trajectory_data = trajectory_data_per_digit[idx]
 
-                x_min_mnist_center, y_min_mnist_center, bw, bh = digit_bbox[frame_number] # in mnist digit center coordinates
+                if frame_idx not in trajectory_data:
+                    continue
 
-                x_min = cx + x_min_mnist_center
-                y_min = cy + y_min_mnist_center
+                x, y = trajectory_data[frame_idx]['center_point']
 
-                x_max = x_min + bw
-                y_max = y_min + bh
+                # Create empty canvas for this digit
+                digit_canvas = trajectory_data[frame_idx]['frame']
 
-                # Check if the bounding box is within the canvas boundaries
-                if x_max > left_boundary and x_min < right_boundary and y_max > top_boundary and y_min < bottom_boundary:
-                    # Adjust the bounding box to fit within the canvas
-                    x_min = max(x_min, left_boundary)
-                    y_min = max(y_min, top_boundary)
-                    x_max = min(x_max, right_boundary)
-                    y_max = min(y_max, bottom_boundary)
+                # Create mask for this digit
+                digit_mask = torch.zeros_like(digit_canvas, dtype=torch.bool)
+                bbox = trajectory_data[frame_idx]['bbox']
+                if bbox is None:
+                    continue
 
-                    # Convert coordinate system from center to top-left corner
-                    x_min_tl = x_min + self.canvas_width // 2
-                    y_min_tl = y_min + self.canvas_height // 2
-                    width = x_max - x_min
-                    height = y_max - y_min
+                (x_min, y_min, width, height) = bbox
 
-                    bboxes_labels.append(label)
-                    bboxes_coco_format.append(
-                        (x_min_tl, y_min_tl, width, height))  # (x_min, y_min, width, height) in top-left coords
+                if self.enable_ranks:
 
-                    if left_boundary <= cx <= right_boundary and top_boundary <= cy <= bottom_boundary:
-                        labels.append(label)
-                        center_points.append((cx, cy))
-                        # Convert center point to top-left coordinate system
-                        cx_tl = cx + self.canvas_width // 2
-                        cy_tl = cy + self.canvas_height // 2
-                        bboxes_keypoints_coco_format.append((cx_tl, cy_tl, 2))  # 2 means visible
+                    digit_mask[:, y_min:y_min+height, x_min:x_min+width] = True
+
+                    # Only place digit where accumulated mask is False (no digit yet)
+                    placement_mask = digit_mask & ~accumulated_masks[frame_idx]
+
+                    # Place the digit and update the accumulated mask
+                    combined_digits[frame_idx][placement_mask] = digit_canvas[placement_mask]
+                    accumulated_masks[frame_idx] |= digit_mask
+
+                    # Find the visible pixels for this digit after masking
+                    digit_canvas_after_overlap = torch.zeros_like(digit_canvas)
+                    digit_canvas_after_overlap[placement_mask] = digit_canvas[placement_mask]
+                    visible_pixels = digit_canvas_after_overlap.nonzero()
+
+                    # Check if center point is visible or overlapped
+                    cx = x + self.canvas_width // 2
+                    cy = y + self.canvas_height // 2
+
+                    # Only add valid center points
+                    if 0 <= cx < self.canvas_width and 0 <= cy < self.canvas_height:
+                        # Check if center point is overlapped by previously placed digits
+                        center_point_visible = placement_mask[0, int(cy), int(cx)].item()
+                        # We'll still track the point but mark visibility based on overlap
+                        visibility = 2 if center_point_visible else 1
                     else:
-                        bboxes_keypoints_coco_format.append((0, 0, 0))  # 0 means not labeled not visible
+                        visibility = 0  # Point is outside canvas
+
+
+                    if visible_pixels.size(0) > 0:  # Check if there are any visible pixels
+                        # Get y, x coordinates of visible pixels
+                        y_coords = visible_pixels[:, 1]
+                        x_coords = visible_pixels[:, 2]
+
+                        # Find bounding box of visible pixels
+                        min_x = x_coords.min().item()
+                        max_x = x_coords.max().item()
+                        min_y = y_coords.min().item()
+                        max_y = y_coords.max().item()
+
+                        # Calculate width and height
+                        width = max_x - min_x + 1
+                        height = max_y - min_y + 1
+
+                        # Store updated bounding box
+                        trajectory_data[frame_idx]['bbox'] = (min_x, min_y, width, height)
+                    else:
+                        # No visible pixels, set empty bbox
+                        trajectory_data[frame_idx]['bbox'] = None
+                else:
+                    # Original max-based combination
+                    # combined_digits = moving_digits.max(dim=0)[0]
+                    raise NotImplementedError("Ranking system is not enabled, but it is required for this dataset.")
+
+                if trajectory_data[frame_idx]['bbox'] is None:
+                    continue
+
+                labels.append(label)
+                bboxes_labels.append(label)
+                bboxes_coco_format.append(trajectory_data[frame_idx]['bbox'])
+                center_points.append((x, y))
+                track_ids.append(idx)
+
+                cx = x + self.canvas_width // 2
+                cy = y + self.canvas_height // 2
+
+                if cx < 0 or cy < 0 or cx >= self.canvas_width or cy >= self.canvas_height:
+                    # If the center point is outside the canvas, we do not add it
+                    bboxes_keypoints_coco_format.append((0, 0, 0))
+                else:
+                    # Convert center point to top-left coordinate system
+                    bboxes_keypoints_coco_format.append((cx, cy, visibility))
 
             target['labels'] = labels
             target['center_points'] = center_points
             target['bboxes'] = bboxes_coco_format
             target['bboxes_labels'] = bboxes_labels
             target['bboxes_keypoints'] = bboxes_keypoints_coco_format
+            target['track_ids'] = track_ids
 
             targets.append(target)
         return (
@@ -184,6 +236,22 @@ class MovingMNIST:
             targets,
             mnist_indices
         )
+
+    def __getitem__(self, i):
+        """
+        Get a sequence with at least one valid target. Will retry up to max_retries times.
+        """
+        for attempt in range(self.max_retries):
+            frames, targets, mnist_indices = self._get_internal(i)
+            if self._has_valid_targets(targets):
+                return frames, targets, mnist_indices
+
+            if attempt + 1 < self.max_retries:
+                logging.debug(f"Generated sequence has no valid targets. Retrying ({attempt+1}/{self.max_retries})...")
+
+        logging.warning(f"Failed to generate sequence with valid targets after {self.max_retries} attempts. "
+                        f"Returning sequence without valid targets.")
+        return frames, targets, mnist_indices
 
     def save(self, directory, num_videos, num_videos_hard, whole_dataset=False, hf_videofolder_format=False, hf_arrow_format=False):
         if not os.path.exists(directory):
@@ -261,17 +329,22 @@ class MovingMNIST:
             features = Features({
                 "video": Array3D(shape=(self.num_frames, 128, 128), dtype="uint8"),
                 "labels": Sequence(Sequence(Value("uint8"))),
-                "center_points": Sequence(Sequence(Sequence(Value("int16")))),
-                "bboxes": Sequence(Sequence(Sequence(Value("int16")))),
-                "bboxes_keypoints": Sequence(Sequence(Sequence(Value("int16")))),
+                "center_points": Sequence(Sequence(Sequence(Value("float32")))),
+                "bboxes": Sequence(Sequence(Sequence(Value("float32")))),
+                "bboxes_keypoints": Sequence(Sequence(Sequence(Value("float32")))),
                 "bboxes_labels": Sequence(Sequence(Value("uint8"))),
+                "track_ids": Sequence(Sequence(Value("uint8"))),
             })
 
             def video_generator():
                 nonlocal mnist_indices_used, seq_index
                 # Generate initial num_videos
                 for _ in range(num_videos):
-                    frames, targets, mnist_indices = self[0]
+                    try:
+                        frames, targets, mnist_indices = self[0]
+                    except Exception as e:
+                        logging.error(f"Error generating video sequence: {e}")
+                        raise e
 
                     # Convert directly to uint8 and remove channel dimension
                     frames_np = (frames.detach().numpy() * 255).astype(np.uint8)
@@ -282,6 +355,7 @@ class MovingMNIST:
                     bboxes = [t['bboxes'] for t in targets]
                     bboxes_labels = [t['bboxes_labels'] for t in targets]
                     bboxes_keypoints = [t['bboxes_keypoints'] for t in targets]
+                    track_ids = [t['track_ids'] for t in targets]
                     yield {
                         "video": frames_np,
                         "labels": labels,
@@ -289,6 +363,7 @@ class MovingMNIST:
                         "bboxes": bboxes,
                         "bboxes_labels": bboxes_labels,
                         "bboxes_keypoints": bboxes_keypoints,
+                        "track_ids": track_ids,
                     }
                     mnist_indices_used.update(mnist_indices)
                     seq_index += 1
@@ -427,12 +502,12 @@ def translate_digits_overlap_free(canvas_width, canvas_height, num_objects, digi
         placed_position_translations.append((tx, ty))
     return placed_position_translations
 
-def translate_digits_randomly(canvas_width, canvas_height, num_objects, digit_size=28):
+def translate_digits_randomly(canvas_width, canvas_height, num_objects, digit_size=28, canvas_multiplier=1.0):
     placed_positions = []
     for _ in range(num_objects):
         # Randomly generate a position
-        x = random.randint(0, canvas_width - digit_size)
-        y = random.randint(0, canvas_height - digit_size)
+        x = random.randint(0, canvas_width*canvas_multiplier - digit_size//2)
+        y = random.randint(0, canvas_height*canvas_multiplier - digit_size//2)
         placed_positions.append((x, y))
 
     placed_position_translations = []
@@ -442,3 +517,136 @@ def translate_digits_randomly(canvas_width, canvas_height, num_objects, digit_si
         tx, ty = canvas_width//2 - cx, canvas_height//2 - cy
         placed_position_translations.append((tx, ty))
     return placed_position_translations
+
+def get_trajectory_params(trajectory, mnist_label):
+    if trajectory.__name__ == 'NonLinearTrajectory':
+        path_type = get_path_type(mnist_label)
+
+        params = {
+            "path_type": path_type,
+            "amplitude": random.uniform(1, 10),
+            "frequency": random.uniform(0.05, 0.25),
+        }
+
+        # Add trajectory-specific parameters
+        if path_type == "sine":
+            params.update({
+                "phase": random.uniform(0, 2 * math.pi),  # Phase shift for the sine wave
+                "direction": random.choice(["vertical"]),  # Direction of sine wave
+                "poly_coeffs": {
+                    'x': [0, random.uniform(-1.2, 1.2), 0],
+                    'y': [0, random.uniform(-1.2, 1.2), 0],
+                    'poly_scale': random.uniform(1.0, 1.5),
+                }
+            })
+
+        elif path_type == "polynomial":
+            params.update({
+                "poly_coeffs": {
+                    'x': [0, random.uniform(-1.2, 1.2), random.uniform(-0.15, 0.15)],
+                    'y': [0, random.uniform(-1.2, 1.2), random.uniform(-0.15, 0.15)],
+                    'poly_scale': random.uniform(1.0, 1.5),
+                }
+            })
+
+        elif path_type == "circle":
+            params.update({
+                "radius": random.uniform(5, 15),  # Circle radius
+                "angular_velocity": random.uniform(0.05, 0.2),  # Speed of rotation
+                "center_offset": (random.uniform(-5, 5), random.uniform(-5, 5)),  # Offset from initial position
+                "poly_coeffs": {
+                    'x': [0, random.uniform(-1.2, 1.2), 0],
+                    'y': [0, random.uniform(-1.2, 1.2), 0],
+                    'poly_scale': random.uniform(1.0, 1.5),
+                }
+            })
+
+        elif path_type == "spiral":
+            params.update({
+                "growth_rate": random.uniform(0.1, 0.3),  # Controls how quickly spiral expands
+                "angular_velocity": random.uniform(0.05, 0.2),  # Speed of rotation
+                "direction": random.choice(["outward", "inward"]),  # Spiral direction
+                "poly_coeffs": {
+                    'x': [0, random.uniform(-1.2, 1.2), random.uniform(-0.15, 0.15)],
+                    'y': [0, random.uniform(-1.2, 1.2), random.uniform(-0.15, 0.15)],
+                    'poly_scale': random.uniform(1.0, 1.5),
+                }
+            })
+
+        elif path_type == "figure8":
+            params.update({
+                "scale_x": random.uniform(5, 15),  # Horizontal scale
+                "scale_y": random.uniform(5, 15),  # Vertical scale
+                "angular_velocity": random.uniform(0.05, 0.2),  # Speed of movement
+                "rotation": random.uniform(0, math.pi/2)  # Rotation angle of the figure-8
+            })
+
+        elif path_type == "elliptical":
+            params.update({
+                "semi_major": random.uniform(8, 20),  # Semi-major axis
+                "semi_minor": random.uniform(4, 12),  # Semi-minor axis
+                "angular_velocity": random.uniform(0.05, 0.2),  # Speed of rotation
+                "rotation": random.uniform(0, math.pi/2),  # Rotation of ellipse
+                "center_offset": (random.uniform(-5, 5), random.uniform(-5, 5))  # Offset from initial position
+            })
+
+        elif path_type == "cubic":
+            params.update({
+                "coefficients": {
+                    'a': random.uniform(-0.001, 0.001),  # x³ coefficient
+                    'b': random.uniform(-0.05, 0.05),    # x² coefficient
+                    'c': random.uniform(-1.0, 1.0),      # x coefficient
+                    'd': 0  # Constant term, usually 0 to start at origin
+                },
+                "direction": random.choice(["x", "y", "both"]),  # Which coordinate uses cubic function
+                "scale": random.uniform(0.5, 2.0)  # Scale factor for the motion
+            })
+
+        elif path_type == "zigzag":
+            params.update({
+                "segment_length": random.uniform(5, 20),  # Length of each segment
+                "angle": random.uniform(math.pi/6, math.pi/3),  # Angle of zigzag
+                "direction": random.choice(["horizontal", "vertical", "diagonal"]),  # Primary direction
+                "randomness": random.uniform(0, 0.3)  # Random variation in segment length/angle
+            })
+
+        elif path_type == "exponential":
+            params.update({
+                "base": random.uniform(1.01, 1.1),  # Base of exponential (slightly above 1)
+                "scale": random.uniform(0.5, 2.0),  # Scale factor for the curve
+                "direction": random.choice(["up", "down", "left", "right"]),  # Direction of growth
+                "decay_factor": random.uniform(0.9, 0.99)  # Optional decay to limit growth
+            })
+
+        elif path_type == "hyperbolic":
+            params.update({
+                "scale_x": random.uniform(5, 15),  # Horizontal scale
+                "scale_y": random.uniform(5, 15),  # Vertical scale
+                "shift": random.uniform(0.5, 5.0),  # Shift from origin to avoid singularity
+                "orientation": random.choice(["x", "y"]),  # Primary axis
+                "branch": random.choice(["positive", "negative", "both"])  # Which branch(es) to use
+            })
+
+        return params
+
+    raise NotImplementedError(f"Trajectory type {type(trajectory)} is not supported for saving parameters.")
+
+
+def get_path_type(mnist_label):
+    path_types = {
+        0: "sine",         # Sinusoidal wave motion: y(t) = a * sin(ωt)
+        1: "polynomial",   # Polynomial trajectory: y(t) = ax² + bx + c
+        2: "circle",       # Circular orbit: x(t) = r * cos(t), y(t) = r * sin(t)
+        3: "spiral",       # Outward spiral: x(t) = at * cos(t), y(t) = at * sin(t)
+        4: "figure8",      # Figure-8 curve: x(t) = a * sin(2t), y(t) = a * sin(t)
+        5: "elliptical",   # Elliptical path: x(t) = a * cos(t), y(t) = b * sin(t), where a≠b
+        6: "cubic",        # Cubic function: y(t) = at³ + bt² + ct + d
+        7: "zigzag",       # Zigzag pattern: y(t) = a * abs(((t/b) % 2) - 1)
+        8: "exponential",  # Exponential curve: y(t) = a * e^(bt)
+        9: "hyperbolic",   # Hyperbolic path: x(t) = a * cosh(t), y(t) = b * sinh(t)
+    }
+
+    if mnist_label not in path_types:
+        raise ValueError(f"Invalid MNIST label: {mnist_label}. Expected 0-9.")
+
+    return path_types[mnist_label]
