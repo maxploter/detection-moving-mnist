@@ -514,7 +514,7 @@ def translate_digits_randomly(canvas_width, canvas_height, num_objects, digit_si
     for p in placed_positions:
         x, y = p
         cx, cy = x+digit_size//2, y+digit_size//2
-        tx, ty = canvas_width//2 - cx, canvas_height//2 - cy
+        tx, ty = canvas_width*canvas_multiplier//2 - cx, canvas_height*canvas_multiplier//2 - cy
         placed_position_translations.append((tx, ty))
     return placed_position_translations
 
