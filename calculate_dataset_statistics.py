@@ -16,16 +16,22 @@ def parse_args():
 		description="Calculate dataset statistics and create distribution histograms"
 	)
 	parser.add_argument(
-		"--dataset_dir",
+		"--dataset",
 		type=str,
 		required=True,
-		help="Root directory of dataset in Hugging Face videofolder format"
+		help="Path to dataset on filesystem or name of the dataset in Hugging Face hub"
 	)
 	parser.add_argument(
 		"--splits",
 		nargs='+',
 		default=DATASET_SPLITS,
 		help=f"Dataset splits to process (e.g., {','.join(DATASET_SPLITS)})"
+	)
+	parser.add_argument(
+		"--output_dir",
+		type=str,
+		default=".",
+		help="Directory to save output files"
 	)
 	return parser.parse_args()
 
@@ -45,14 +51,16 @@ def create_histogram(data, title, xlabel, ylabel, bins, filename):
 def main(args):
 	dataset_stats = {}
 
+	# Ensure output directory exists
+	os.makedirs(args.output_dir, exist_ok=True)
+
 	for split in args.splits:
 		print(f"Processing {split} split...")
 
 		try:
 			dataset = load_dataset(
-				args.dataset_dir,
+				args.dataset,
 				split=split,
-				trust_remote_code=True
 			)
 		except Exception as e:
 			print(f"Error loading {split}: {str(e)}")
@@ -89,7 +97,7 @@ def main(args):
 
 			# Process targets for histograms
 			for i in range(video_tensor.shape[0]):
-				frame_labels = example['labels'][i]
+				frame_labels = example['bboxes_labels'][i]
 				num_digits = len(frame_labels)
 				digits_per_frame.append(num_digits)
 
@@ -108,17 +116,32 @@ def main(args):
 
 		# Create and save histograms
 		if digits_per_frame:
-			# Digits per frame distribution
+			# Digits per frame distribution (allow 0 objects)
 			max_digits = max(digits_per_frame)
-			plt_path = os.path.join(args.dataset_dir, f"{split}_digits_per_frame.png")
+			plt_path = os.path.join(args.output_dir, f"{split}_digits_per_frame.png")
 			create_histogram(
 				digits_per_frame,
 				f"Normalized Digits per Frame Distribution ({split})",
-				"Number of Digits",
+				"Number of Objects",
 				"Normalized Frequency",
-				bins=np.arange(1, max_digits + 1),
+				bins=np.arange(0, max_digits + 2),  # bins from 0 to max_digits (inclusive)
 				filename=plt_path
 			)
+
+			# Plot ratio of empty frames vs frames with objects
+			num_empty = sum(1 for n in digits_per_frame if n == 0)
+			num_nonempty = len(digits_per_frame) - num_empty
+			plt.figure(figsize=(6, 6))
+			plt.pie(
+				[num_empty, num_nonempty],
+				labels=["Empty frames", "Frames with objects"],
+				autopct='%1.1f%%',
+				colors=["#cccccc", "#66b3ff"],
+				startangle=90
+			)
+			plt.title(f"Empty vs Non-empty Frames Ratio ({split})")
+			plt.savefig(os.path.join(args.output_dir, f"{split}_empty_vs_nonempty_frames.png"))
+			plt.close()
 
 		if digit_counts:
 			# Digit class distribution
@@ -132,11 +155,11 @@ def main(args):
 			plt.ylabel("Normalized Frequency")
 			plt.xticks(range(10))
 			plt.grid(True, alpha=0.3)
-			plt.savefig(os.path.join(args.dataset_dir, f"{split}_digit_classes.png"))
+			plt.savefig(os.path.join(args.output_dir, f"{split}_digit_classes.png"))
 			plt.close()
 
 	# Save statistics to JSON file
-	stats_path = os.path.join(args.dataset_dir, "dataset_stats.json")
+	stats_path = os.path.join(args.output_dir, "dataset_stats.json")
 	with open(stats_path, "w") as f:
 		json.dump(dataset_stats, f, indent=2)
 	print(f"Saved dataset statistics to {stats_path}")
