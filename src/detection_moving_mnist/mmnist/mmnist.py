@@ -100,7 +100,7 @@ class MovingMNIST:
         digits = random.choice(self.num_digits)
         initial_digit_translations = translate_digits_overlap_free(self.canvas_width, self.canvas_height,
                                                                    digits) if self.initial_digits_overlap_free else translate_digits_randomly(
-            self.canvas_width, self.canvas_height, digits, canvas_multiplier=1.5)
+            self.canvas_width, self.canvas_height, digits, canvas_multiplier=1.2) # 69% visibility of digits
 
         trajectory_data_per_digit, all_labels, mnist_indices = zip(
             *(self._one_moving_digit(initial_digit_translations[i]) for i in range(digits))

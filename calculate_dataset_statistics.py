@@ -61,7 +61,6 @@ def main(args):
 			dataset = load_dataset(
 				args.dataset,
 				split=split,
-				trust_remote_code=True
 			)
 		except Exception as e:
 			print(f"Error loading {split}: {str(e)}")
