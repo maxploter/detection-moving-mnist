@@ -506,15 +506,15 @@ def translate_digits_randomly(canvas_width, canvas_height, num_objects, digit_si
     placed_positions = []
     for _ in range(num_objects):
         # Randomly generate a position
-        x = random.randint(0, canvas_width*canvas_multiplier - digit_size//2)
-        y = random.randint(0, canvas_height*canvas_multiplier - digit_size//2)
+        x = random.randint(0, int(canvas_width*canvas_multiplier) - digit_size//2)
+        y = random.randint(0, int(canvas_height*canvas_multiplier) - digit_size//2)
         placed_positions.append((x, y))
 
     placed_position_translations = []
     for p in placed_positions:
         x, y = p
         cx, cy = x+digit_size//2, y+digit_size//2
-        tx, ty = canvas_width*canvas_multiplier//2 - cx, canvas_height*canvas_multiplier//2 - cy
+        tx, ty = int(canvas_width*canvas_multiplier)//2 - cx, int(canvas_height*canvas_multiplier)//2 - cy
         placed_position_translations.append((tx, ty))
     return placed_position_translations
 
