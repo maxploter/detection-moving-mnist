@@ -119,6 +119,7 @@ class MovingMNIST:
             labels = []
             center_points = []
             bboxes_coco_format = [] # x_min, y_min, w, h
+            amodal_bboxes_coco_format = [] # x_min, y_min, w, h
             bboxes_keypoints_coco_format = [] # x, y, visibility
             bboxes_labels = []
             track_ids = []
@@ -140,6 +141,8 @@ class MovingMNIST:
                 # Create mask for this digit
                 digit_mask = torch.zeros_like(digit_canvas, dtype=torch.bool)
                 bbox = trajectory_data[frame_idx]['bbox']
+                amodal_bbox = trajectory_data[frame_idx]['amodal_bbox']
+
                 if bbox is None:
                     continue
 
@@ -195,17 +198,25 @@ class MovingMNIST:
                     else:
                         # No visible pixels, set empty bbox
                         trajectory_data[frame_idx]['bbox'] = None
+
+
+                    trajectory_data[frame_idx]['amodal_bbox'] = amodal_bbox
                 else:
                     # Original max-based combination
                     # combined_digits = moving_digits.max(dim=0)[0]
                     raise NotImplementedError("Ranking system is not enabled, but it is required for this dataset.")
 
-                if trajectory_data[frame_idx]['bbox'] is None:
+                if trajectory_data[frame_idx]['amodal_bbox'] is None:
                     continue
 
                 labels.append(label)
                 bboxes_labels.append(label)
-                bboxes_coco_format.append(trajectory_data[frame_idx]['bbox'])
+                amodal_bboxes_coco_format.append(trajectory_data[frame_idx]['amodal_bbox'])
+                if trajectory_data[frame_idx]['bbox'] is None:
+                    bboxes_coco_format.append([-1, -1, -1, -1])
+                else:
+                    bboxes_coco_format.append(trajectory_data[frame_idx]['bbox'])
+
                 center_points.append((x, y))
                 track_ids.append(idx)
 
@@ -222,6 +233,7 @@ class MovingMNIST:
             target['labels'] = labels
             target['center_points'] = center_points
             target['bboxes'] = bboxes_coco_format
+            target['amodal_bboxes'] = amodal_bboxes_coco_format
             target['bboxes_labels'] = bboxes_labels
             target['bboxes_keypoints'] = bboxes_keypoints_coco_format
             target['track_ids'] = track_ids
@@ -331,6 +343,7 @@ class MovingMNIST:
                 "labels": Sequence(Sequence(Value("uint8"))),
                 "center_points": Sequence(Sequence(Sequence(Value("float32")))),
                 "bboxes": Sequence(Sequence(Sequence(Value("float32")))),
+                "amodal_bboxes": Sequence(Sequence(Sequence(Value("float32")))),
                 "bboxes_keypoints": Sequence(Sequence(Sequence(Value("float32")))),
                 "bboxes_labels": Sequence(Sequence(Value("uint8"))),
                 "track_ids": Sequence(Sequence(Value("uint8"))),
@@ -353,6 +366,7 @@ class MovingMNIST:
                     labels = [t['labels'] for t in targets]
                     center_points = [t['center_points'] for t in targets]
                     bboxes = [t['bboxes'] for t in targets]
+                    amodal_bboxes = [t['amodal_bboxes'] for t in targets]
                     bboxes_labels = [t['bboxes_labels'] for t in targets]
                     bboxes_keypoints = [t['bboxes_keypoints'] for t in targets]
                     track_ids = [t['track_ids'] for t in targets]
@@ -361,6 +375,7 @@ class MovingMNIST:
                         "labels": labels,
                         "center_points": center_points,
                         "bboxes": bboxes,
+                        "amodal_bboxes": amodal_bboxes,
                         "bboxes_labels": bboxes_labels,
                         "bboxes_keypoints": bboxes_keypoints,
                         "track_ids": track_ids,

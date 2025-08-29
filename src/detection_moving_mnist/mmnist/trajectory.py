@@ -54,6 +54,8 @@ class BaseTrajectory:
         digit_canvas[:, y_digit_min:y_digit_min + self.mnist_img.size(1),
         x_digit_min:x_digit_min + self.mnist_img.size(2)] = self.mnist_img
 
+        (_, _, digit_width, digit_height) = self.bbox(self.mnist_img)
+
         x = self.position[0]
         y = self.position[1]
         placed_img = TF.affine(digit_canvas, translate=[x, y], angle=0, scale=1, shear=[0])
@@ -64,6 +66,7 @@ class BaseTrajectory:
             "frame": placed_img,
             "center_point": self.position,
             "bbox": digit_bbox,
+            "amodal_bbox": (self.position[0] - digit_width/2 + 64, self.position[1] - digit_height/2 + 64, digit_width, digit_height),
         }}
 
         for t in range(self.first_appearance_frame+1, self.n):
@@ -73,6 +76,7 @@ class BaseTrajectory:
                 "frame": img,
                 "center_point": position,
                 "bbox": self.bbox(img),
+                "amodal_bbox": (position[0] - digit_width/2 + 64, position[1] - digit_height/2 + 64, digit_width, digit_height),
             }
         return targets
 
