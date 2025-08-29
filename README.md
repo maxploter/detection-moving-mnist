@@ -57,7 +57,7 @@ options:
 
 Example:
 ```shell
-python3 generate.py --split train --version easy --num_frames_per_video 20 --num_videos 60000 --num_videos_hard 120000 --whole_dataset --hf_arrow_format
+python3 generate.py --split train --version medium --num_frames_per_video 20 --num_videos 11 --num_videos_hard 21 --whole_dataset --hf_arrow_format --enable_ranks --enable_delayed_appearance
 ```
 
 ## How to convert torch-tensor-format to huggingface videofolder format
