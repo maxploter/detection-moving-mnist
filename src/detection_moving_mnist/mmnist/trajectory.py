@@ -56,29 +56,50 @@ class BaseTrajectory:
 
         (_, _, digit_width, digit_height) = self.bbox(self.mnist_img)
 
+        digit_area = digit_width * digit_height
+
         x = self.position[0]
         y = self.position[1]
         placed_img = TF.affine(digit_canvas, translate=[x, y], angle=0, scale=1, shear=[0])
 
         digit_bbox = self.bbox(placed_img)
-
+        amodal_bbox = self.get_amodal_bbox(digit_area, digit_bbox, digit_height, digit_width, self.position)
         targets = {self.first_appearance_frame: {
             "frame": placed_img,
             "center_point": self.position,
             "bbox": digit_bbox,
-            "amodal_bbox": (self.position[0] - digit_width/2 + 64, self.position[1] - digit_height/2 + 64, digit_width, digit_height),
+            "amodal_bbox": amodal_bbox,
         }}
 
         for t in range(self.first_appearance_frame+1, self.n):
             img, position = self.transform(digit_canvas, targets[t-1]['center_point'])
-
+            bbox = self.bbox(img)
+            amodal_bbox = self.get_amodal_bbox(digit_area, bbox, digit_height, digit_width, position)
             targets[t] = {
                 "frame": img,
                 "center_point": position,
-                "bbox": self.bbox(img),
-                "amodal_bbox": (position[0] - digit_width/2 + 64, position[1] - digit_height/2 + 64, digit_width, digit_height),
+                "bbox": bbox,
+                "amodal_bbox": amodal_bbox,
             }
         return targets
+
+    def get_amodal_bbox(self, digit_area, digit_bbox, digit_height, digit_width, center_point, canvas_size=128):
+        if digit_bbox is None:
+            return None
+
+        digit_bbox_area = digit_bbox[2] * digit_bbox[3]
+        amodal_bbox = digit_bbox
+        # If the digit is partially out of frame, adjust the amodal bbox to be the
+        if digit_bbox_area < digit_area:
+            half_canvas = canvas_size // 2
+            # The amodal bbox is the full bbox of the digit, even if it's out of frame
+            amodal_bbox = (
+                center_point[0] - digit_width / 2 + half_canvas,
+                center_point[1] - digit_height / 2 + half_canvas,
+                digit_width,
+                digit_height
+            )
+        return amodal_bbox
 
     def bbox(self, img):
         """
